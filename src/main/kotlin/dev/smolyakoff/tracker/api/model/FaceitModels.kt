@@ -253,6 +253,20 @@ data class FaceitSegment(
     val averageKdRatio: Double get() = stats["Average K/D Ratio"]?.toDoubleOrNull() ?: 0.0
     val adr: Double get() = stats["ADR"]?.toDoubleOrNull() ?: 0.0
     val wins: Int get() = stats["Wins"]?.toIntOrNull() ?: 0
+    val rounds: Int get() = stats["Rounds"]?.toIntOrNull() ?: 0
+    val deaths: Int get() = stats["Deaths"]?.toIntOrNull() ?: 0
+    val assists: Int get() = stats["Assists"]?.toIntOrNull() ?: 0
+    val kills: Int get() = stats["Kills"]?.toIntOrNull() ?: 0
+    val kpr: Double get() = stats["Average K/R Ratio"]?.toDoubleOrNull()
+        ?: (if (rounds > 0) kills.toDouble() / rounds else 0.70)
+    val dpr: Double get() = if (rounds > 0) deaths.toDouble() / rounds else 0.70
+    val apr: Double get() = if (rounds > 0) assists.toDouble() / rounds else 0.15
+
+    val rating: Double get() {
+        val impact = (2.13 * kpr) + (0.42 * apr) - 0.41
+        val baseRating = (0.00738 * adr) + (0.3591 * kpr) - (0.5329 * dpr) + (0.2372 * impact) + 0.38
+        return (Math.round(baseRating * 100.0) / 100.0).coerceAtLeast(0.1)
+    }
 }
 
 @Serializable

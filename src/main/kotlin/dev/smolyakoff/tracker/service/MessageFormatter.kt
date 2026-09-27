@@ -100,15 +100,11 @@ object MessageFormatter {
 
     fun calculateBestAndWorstMaps(segments: List<FaceitSegment>): Pair<FaceitSegment?, FaceitSegment?> {
         val mapSegments = segments.filter { it.type.equals("Map", ignoreCase = true) && it.matches >= 3 }
-        if (mapSegments.isEmpty()) {
-            val anyMapSegments = segments.filter { it.type.equals("Map", ignoreCase = true) && it.matches > 0 }
-            if (anyMapSegments.isEmpty()) return null to null
-            val best = anyMapSegments.maxByOrNull { it.winRatePercent }
-            val worst = anyMapSegments.takeIf { anyMapSegments.size > 1 }?.minByOrNull { it.winRatePercent }
-            return best to (if (worst != best) worst else null)
-        }
-        val best = mapSegments.maxByOrNull { it.winRatePercent }
-        val worst = mapSegments.takeIf { mapSegments.size > 1 }?.minByOrNull { it.winRatePercent }
+        val pool = if (mapSegments.isNotEmpty()) mapSegments else segments.filter { it.type.equals("Map", ignoreCase = true) && it.matches > 0 }
+        if (pool.isEmpty()) return null to null
+
+        val best = pool.maxByOrNull { it.rating }
+        val worst = pool.takeIf { pool.size > 1 }?.minByOrNull { it.rating }
         return best to (if (worst != best) worst else null)
     }
 
@@ -127,7 +123,7 @@ object MessageFormatter {
 
         appendLine("📊 <b>Статистика: <a href=\"$profileUrl\">$safeNick</a></b>")
         appendLine("─────────────────────")
-        val peak = if (maxElo > player.currentElo) " (Max: <b>$maxElo</b>)" else " (Max: <b>${player.currentElo}</b>)"
+        val peak = if (maxElo > player.currentElo) " (Max: <b>$maxElo</b>)" else ""
         appendLine("⭐️ Уровень: <b>${player.skillLevel}</b> | 🏆 Elo: <b>${player.currentElo}</b>$peak")
 
         val rankParts = mutableListOf<String>()
@@ -180,10 +176,10 @@ object MessageFormatter {
                 appendLine("─────────────────────")
                 appendLine("🗺 <b>Сигнатурные карты:</b>")
                 if (bestMap != null) {
-                    appendLine("👑 Лучшая: <b>${bestMap.label.escapeHtml()}</b> (${bestMap.winRatePercent}% WR, KD ${bestMap.averageKdRatio.formatKd()}, ${bestMap.matches} игр)")
+                    appendLine("👑 Лучшая: <b>${bestMap.label.escapeHtml()}</b> (K/D: <b>${bestMap.averageKdRatio.formatKd()}</b> | Рейтинг: <b>${bestMap.rating.formatKd()}</b>)")
                 }
                 if (worstMap != null && worstMap != bestMap) {
-                    appendLine("💀 Худшая: <b>${worstMap.label.escapeHtml()}</b> (${worstMap.winRatePercent}% WR, KD ${worstMap.averageKdRatio.formatKd()}, ${worstMap.matches} игр)")
+                    appendLine("💀 Худшая: <b>${worstMap.label.escapeHtml()}</b> (K/D: <b>${worstMap.averageKdRatio.formatKd()}</b> | Рейтинг: <b>${worstMap.rating.formatKd()}</b>)")
                 }
             }
         }

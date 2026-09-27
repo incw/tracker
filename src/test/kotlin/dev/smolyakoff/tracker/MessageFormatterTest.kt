@@ -246,9 +246,21 @@ class MessageFormatterTest {
         assertTrue(formatted.contains("🟢 🟢 🔴 🟢 🟢"))
         assertTrue(formatted.contains("K/D за последние 30 игр: <b>1.42</b>"))
         assertTrue(formatted.contains("Первые дуэли (Entry): <b>56%</b> побед"))
-        assertTrue(formatted.contains("Лучшая: <b>Mirage</b>"))
-        assertTrue(formatted.contains("Худшая: <b>Vertigo</b>"))
+        assertTrue(formatted.contains("👑 Лучшая: <b>Mirage</b> (K/D: <b>1.38</b> | Рейтинг:"))
+        assertTrue(formatted.contains("💀 Худшая: <b>Vertigo</b> (K/D: <b>0.95</b> | Рейтинг:"))
+        assertFalse(formatted.contains("% WR, KD"))
+        assertFalse(formatted.contains("игр)"))
         assertFalse(formatted.contains("Последние 5 матчей в боте:"))
+
+        // Verify that if maxElo <= currentElo, (Max: ...) is omitted
+        val formattedNoPeak = MessageFormatter.formatPlayerStats(
+            player = player,
+            lifetime = lifetime,
+            maxElo = player.currentElo,
+            recentKd30 = 1.42,
+            recentMatchesCount = 30
+        )
+        assertFalse(formattedNoPeak.contains("Max:"))
     }
 
     @Test
@@ -263,5 +275,45 @@ class MessageFormatterTest {
         assertTrue(text.contains("Nuke"))
         assertTrue(text.contains("60% WR"))
         assertTrue(text.contains("300"))
+    }
+
+    @Test
+    fun testCalculateBestAndWorstMapsBasedOnRatingAndKd() {
+        // Map1 has 100% winrate but poor KD/ADR
+        val highWrPoorKd = FaceitSegment(
+            type = "Map",
+            mode = "5v5",
+            label = "Vertigo",
+            stats = mapOf(
+                "Matches" to "10",
+                "Win Rate %" to "100",
+                "Average K/D Ratio" to "0.75",
+                "ADR" to "55.0",
+                "Rounds" to "200",
+                "Kills" to "100",
+                "Deaths" to "140",
+                "Assists" to "20"
+            )
+        )
+        // Map2 has 40% winrate but great KD/ADR/rating
+        val lowWrHighKd = FaceitSegment(
+            type = "Map",
+            mode = "5v5",
+            label = "Mirage",
+            stats = mapOf(
+                "Matches" to "10",
+                "Win Rate %" to "40",
+                "Average K/D Ratio" to "1.45",
+                "ADR" to "95.0",
+                "Rounds" to "200",
+                "Kills" to "200",
+                "Deaths" to "130",
+                "Assists" to "40"
+            )
+        )
+
+        val (best, worst) = MessageFormatter.calculateBestAndWorstMaps(listOf(highWrPoorKd, lowWrHighKd))
+        org.junit.jupiter.api.Assertions.assertEquals("Mirage", best?.label)
+        org.junit.jupiter.api.Assertions.assertEquals("Vertigo", worst?.label)
     }
 }
