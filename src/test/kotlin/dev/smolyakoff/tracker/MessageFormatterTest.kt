@@ -231,7 +231,6 @@ class MessageFormatterTest {
         val formatted = MessageFormatter.formatPlayerStats(
             player = player,
             lifetime = lifetime,
-            maxElo = 3200,
             recentKd30 = 1.42,
             recentMatchesCount = 30,
             rankingEu = 450,
@@ -240,7 +239,7 @@ class MessageFormatterTest {
         )
 
         assertTrue(formatted.contains("m0NESY"))
-        assertTrue(formatted.contains("Max: <b>3200</b>"))
+        assertFalse(formatted.contains("Max:"))
         assertTrue(formatted.contains("EU: <b>#450</b>"))
         assertTrue(formatted.contains("RU: <b>#120</b>"))
         assertTrue(formatted.contains("🟢 🟢 🔴 🟢 🟢"))
@@ -251,16 +250,6 @@ class MessageFormatterTest {
         assertFalse(formatted.contains("% WR, KD"))
         assertFalse(formatted.contains("игр)"))
         assertFalse(formatted.contains("Последние 5 матчей в боте:"))
-
-        // Verify that if maxElo <= currentElo, (Max: ...) is omitted
-        val formattedNoPeak = MessageFormatter.formatPlayerStats(
-            player = player,
-            lifetime = lifetime,
-            maxElo = player.currentElo,
-            recentKd30 = 1.42,
-            recentMatchesCount = 30
-        )
-        assertFalse(formattedNoPeak.contains("Max:"))
     }
 
     @Test

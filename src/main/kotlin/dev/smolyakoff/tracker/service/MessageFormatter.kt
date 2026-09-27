@@ -111,7 +111,6 @@ object MessageFormatter {
     fun formatPlayerStats(
         player: TrackedPlayer,
         lifetime: PlayerLifetimeStatsResponse?,
-        maxElo: Int,
         recentKd30: Double? = null,
         recentMatchesCount: Int = 30,
         rankingEu: Int? = null,
@@ -123,8 +122,7 @@ object MessageFormatter {
 
         appendLine("📊 <b>Статистика: <a href=\"$profileUrl\">$safeNick</a></b>")
         appendLine("─────────────────────")
-        val peak = if (maxElo > player.currentElo) " (Max: <b>$maxElo</b>)" else ""
-        appendLine("⭐️ Уровень: <b>${player.skillLevel}</b> | 🏆 Elo: <b>${player.currentElo}</b>$peak")
+        appendLine("⭐️ Уровень: <b>${player.skillLevel}</b> | 🏆 Elo: <b>${player.currentElo}</b>")
 
         val rankParts = mutableListOf<String>()
         if (rankingEu != null) {

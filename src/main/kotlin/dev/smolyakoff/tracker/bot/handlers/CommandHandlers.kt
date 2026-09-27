@@ -34,8 +34,6 @@ class CommandHandlers(
     private val statsHandler = StatsHandler(
         faceitApiClient = faceitApiClient,
         playerRepository = playerRepository,
-        matchRepository = matchRepository,
-        eloRepository = eloRepository,
         notificationService = notificationService
     )
 

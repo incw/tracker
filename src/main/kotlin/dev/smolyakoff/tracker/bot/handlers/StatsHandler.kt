@@ -12,8 +12,6 @@ import dev.inmo.tgbotapi.types.message.abstracts.ChatMessage
 import dev.inmo.tgbotapi.types.message.content.TextContent
 import dev.smolyakoff.tracker.api.FaceitApiClient
 import dev.smolyakoff.tracker.bot.NotificationService
-import dev.smolyakoff.tracker.db.EloRepository
-import dev.smolyakoff.tracker.db.MatchRepository
 import dev.smolyakoff.tracker.db.PlayerRepository
 import dev.smolyakoff.tracker.db.model.TrackedPlayer
 import dev.smolyakoff.tracker.service.MessageFormatter
@@ -24,8 +22,6 @@ import kotlinx.coroutines.coroutineScope
 class StatsHandler(
     private val faceitApiClient: FaceitApiClient,
     private val playerRepository: PlayerRepository,
-    private val matchRepository: MatchRepository,
-    private val eloRepository: EloRepository,
     private val notificationService: NotificationService
 ) {
     private val logger = LoggerFactory.getLogger(StatsHandler::class.java)
@@ -115,10 +111,9 @@ class StatsHandler(
             val countryCode = profile?.country ?: "ru"
             val livePlayer = if (profile != null) player.copy(currentElo = profile.elo, skillLevel = profile.skillLevel) else player
 
-            val (lifetime, recentStats, maxEloDb, rankingEu, rankingCountry) = coroutineScope {
+            val (lifetime, recentStats, rankingEu, rankingCountry) = coroutineScope {
                 val lifetimeDeferred = async { faceitApiClient.getPlayerLifetimeStats(player.faceitId) }
                 val recentDeferred = async { faceitApiClient.getPlayerRecentStats(player.faceitId, limit = 30) }
-                val maxEloDeferred = async { eloRepository.getMaxElo(player.faceitId) }
                 val euRankDeferred = async {
                     if (livePlayer.skillLevel >= 10) faceitApiClient.getPlayerRanking(player.faceitId, region = "EU") else null
                 }
@@ -126,10 +121,9 @@ class StatsHandler(
                     if (livePlayer.skillLevel >= 10) faceitApiClient.getPlayerRanking(player.faceitId, region = "EU", country = countryCode) else null
                 }
 
-                Tuple5(
+                Tuple4(
                     lifetimeDeferred.await(),
                     recentDeferred.await(),
-                    maxEloDeferred.await(),
                     euRankDeferred.await(),
                     countryRankDeferred.await()
                 )
@@ -143,12 +137,9 @@ class StatsHandler(
             } else null
             val recentMatchesCount = recentItems.size
 
-            val maxElo = maxOf(livePlayer.currentElo, maxEloDb ?: livePlayer.currentElo)
-
             val text = MessageFormatter.formatPlayerStats(
                 player = livePlayer,
                 lifetime = lifetime,
-                maxElo = maxElo,
                 recentKd30 = recentKd30,
                 recentMatchesCount = recentMatchesCount,
                 rankingEu = rankingEu,
@@ -224,7 +215,7 @@ class StatsHandler(
         return remote.toTrackedPlayer()
     }
 
-    private data class Tuple5<A, B, C, D, E>(
-        val a: A, val b: B, val c: C, val d: D, val e: E
+    private data class Tuple4<A, B, C, D>(
+        val a: A, val b: B, val c: C, val d: D
     )
 }
