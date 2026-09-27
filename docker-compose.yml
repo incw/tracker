@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  faceit-tracker:
+    # Укажите ваш GitHub username (в нижнем регистре) или задайте DOCKER_IMAGE в .env
+    image: ${DOCKER_IMAGE:-ghcr.io/your-github-username/tracker:latest}
+    container_name: faceit-tracker
+    restart: unless-stopped
+
+    # Чтение переменных окружения из файла .env
+    env_file:
+      - .env
+
+    environment:
+      - SQLITE_DB_PATH=/app/data/tracker.db
+
+    # Сохранение базы данных SQLite на хосте
+    volumes:
+      - ./data:/app/data
+
+    # Ограничения ресурсов, чтобы бот не аффектил другие микросервисы
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+        reservations:
+          memory: 128M
+
+    # Ротация логов, чтобы не забивать диск сервера
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - tracker-network
+
+networks:
+  tracker-network:
+    driver: bridge

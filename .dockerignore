@@ -1,0 +1,10 @@
+.git
+.gradle
+.idea
+.kotlin
+build
+*.db
+*.db-wal
+*.db-shm
+.env
+*.jpg
