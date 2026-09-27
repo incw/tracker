@@ -243,4 +243,13 @@ class EloRepository {
                 )
             }
     }
+
+    suspend fun getMaxElo(playerId: String): Int? = dbQuery {
+        val maxExpr = EloSnapshotsTable.elo.max()
+        EloSnapshotsTable
+            .select(maxExpr)
+            .where { EloSnapshotsTable.playerId eq playerId }
+            .singleOrNull()
+            ?.getOrNull(maxExpr)
+    }
 }

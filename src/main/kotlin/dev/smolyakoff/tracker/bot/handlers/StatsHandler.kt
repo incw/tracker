@@ -1,44 +1,188 @@
 package dev.smolyakoff.tracker.bot.handlers
 
+import dev.inmo.tgbotapi.extensions.api.answers.answer
 import dev.inmo.tgbotapi.extensions.behaviour_builder.BehaviourContext
 import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onCommand
-import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onCommandWithArgs
+import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onMessageDataCallbackQuery
+import dev.inmo.tgbotapi.types.buttons.InlineKeyboardButtons.CallbackDataInlineKeyboardButton
+import dev.inmo.tgbotapi.types.buttons.InlineKeyboardMarkup
 import dev.inmo.tgbotapi.types.message.abstracts.ChatMessage
+import dev.inmo.tgbotapi.types.message.content.TextContent
 import dev.smolyakoff.tracker.api.FaceitApiClient
 import dev.smolyakoff.tracker.bot.NotificationService
+import dev.smolyakoff.tracker.db.EloRepository
 import dev.smolyakoff.tracker.db.MatchRepository
 import dev.smolyakoff.tracker.db.PlayerRepository
 import dev.smolyakoff.tracker.db.model.TrackedPlayer
 import dev.smolyakoff.tracker.service.MessageFormatter
 import dev.smolyakoff.tracker.util.escapeHtml
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class StatsHandler(
     private val faceitApiClient: FaceitApiClient,
     private val playerRepository: PlayerRepository,
     private val matchRepository: MatchRepository,
+    private val eloRepository: EloRepository,
     private val notificationService: NotificationService
 ) {
     private val ChatMessage.chatId: Long get() = chat.id.chatId.long
 
     suspend fun register(context: BehaviourContext) = with(context) {
-        onCommand("players") { message -> showLeaderboard(message.chatId) }
-        onCommand("leaderboard") { message -> showLeaderboard(message.chatId) }
+        onCommand("top") { message -> showLeaderboard(message.chatId) }
 
-        onCommandWithArgs("stats") { message, args ->
-            val nickname = args.firstOrNull()?.trim()
+        onCommand("stats") { message ->
+            val rawText = message.content.text
+            val withoutCommand = rawText.replace(Regex("^/stats(@\\w+)?", RegexOption.IGNORE_CASE), "").trim()
+            val nickname = withoutCommand.split(Regex("\\s+")).firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+
             if (nickname.isNullOrBlank()) {
-                notificationService.sendMessage(message.chatId, "⚠️ <b>Использование:</b> <code>/stats &lt;ник&gt;</code>")
-                return@onCommandWithArgs
+                val tracked = playerRepository.getAll()
+                when {
+                    tracked.isEmpty() -> {
+                        notificationService.sendMessage(
+                            message.chatId,
+                            "ℹ️ Нет отслеживаемых игроков. Добавьте через <code>/track &lt;ник&gt;</code>"
+                        )
+                    }
+                    tracked.size == 1 -> {
+                        sendPlayerStats(message.chatId, tracked.first().nickname)
+                    }
+                    else -> {
+                        val buttons = tracked.chunked(2).map { row ->
+                            row.map { p ->
+                                CallbackDataInlineKeyboardButton(
+                                    text = "👤 ${p.nickname} [${p.currentElo}]",
+                                    callbackData = "stats:${p.nickname}"
+                                )
+                            }
+                        }
+                        val markup = InlineKeyboardMarkup(keyboard = buttons)
+                        notificationService.sendMessage(
+                            message.chatId,
+                            "👤 <b>Выберите игрока для просмотра статистики:</b>",
+                            markup
+                        )
+                    }
+                }
+                return@onCommand
             }
-            val player = resolvePlayer(nickname)
-            if (player == null) {
-                notificationService.sendMessage(message.chatId, "❌ Игрок <b>${nickname.escapeHtml()}</b> не найден.")
-                return@onCommandWithArgs
-            }
-            val lifetime = faceitApiClient.getPlayerLifetimeStats(player.faceitId)
-            val recentMatches = matchRepository.getRecentMatches(player.faceitId, limit = 5)
-            notificationService.sendMessage(message.chatId, MessageFormatter.formatPlayerStats(player, lifetime, recentMatches))
+
+            sendPlayerStats(message.chatId, nickname)
         }
+
+        onMessageDataCallbackQuery { query ->
+            val data = query.data
+            val chatId = query.message.chat.id.chatId.long
+            val messageId = query.message.messageId.long
+
+            runCatching { answer(query) }
+
+            when {
+                data.startsWith("stats:") -> {
+                    val nickname = data.removePrefix("stats:")
+                    sendPlayerStats(chatId, nickname, editMessageId = messageId)
+                }
+                data.startsWith("maps:") -> {
+                    val nickname = data.removePrefix("maps:")
+                    sendPlayerMaps(chatId, nickname, editMessageId = messageId)
+                }
+            }
+        }
+    }
+
+    private suspend fun sendPlayerStats(chatId: Long, nickname: String, editMessageId: Long? = null) {
+        val player = resolvePlayer(nickname)
+        if (player == null) {
+            notificationService.sendMessage(chatId, "❌ Игрок <b>${nickname.escapeHtml()}</b> не найден на FACEIT.")
+            return
+        }
+
+        val profile = faceitApiClient.getPlayerById(player.faceitId)
+        val countryCode = profile?.country ?: "ru"
+        val livePlayer = if (profile != null) player.copy(currentElo = profile.elo, skillLevel = profile.skillLevel) else player
+
+        val (lifetime, recentStats, maxEloDb, rankingEu, rankingCountry) = coroutineScope {
+            val lifetimeDeferred = async { faceitApiClient.getPlayerLifetimeStats(player.faceitId) }
+            val recentDeferred = async { faceitApiClient.getPlayerRecentStats(player.faceitId, limit = 30) }
+            val maxEloDeferred = async { eloRepository.getMaxElo(player.faceitId) }
+            val euRankDeferred = async {
+                if (livePlayer.skillLevel >= 10) faceitApiClient.getPlayerRanking(player.faceitId, region = "EU") else null
+            }
+            val countryRankDeferred = async {
+                if (livePlayer.skillLevel >= 10) faceitApiClient.getPlayerRanking(player.faceitId, region = "EU", country = countryCode) else null
+            }
+
+            Tuple5(
+                lifetimeDeferred.await(),
+                recentDeferred.await(),
+                maxEloDeferred.await(),
+                euRankDeferred.await(),
+                countryRankDeferred.await()
+            )
+        }
+
+        val recentItems = recentStats?.items.orEmpty()
+        val totalKills = recentItems.sumOf { it.kills }
+        val totalDeaths = recentItems.sumOf { it.deaths }
+        val recentKd30 = if (recentItems.isNotEmpty()) {
+            if (totalDeaths > 0) totalKills.toDouble() / totalDeaths else totalKills.toDouble()
+        } else null
+        val recentMatchesCount = recentItems.size
+
+        val maxElo = maxOf(livePlayer.currentElo, maxEloDb ?: livePlayer.currentElo)
+
+        val text = MessageFormatter.formatPlayerStats(
+            player = livePlayer,
+            lifetime = lifetime,
+            maxElo = maxElo,
+            recentKd30 = recentKd30,
+            recentMatchesCount = recentMatchesCount,
+            rankingEu = rankingEu,
+            rankingCountry = rankingCountry,
+            countryCode = countryCode
+        )
+
+        val markup = InlineKeyboardMarkup(
+            keyboard = listOf(
+                listOf(
+                    CallbackDataInlineKeyboardButton(
+                        text = "🗺 Все карты",
+                        callbackData = "maps:${player.nickname}"
+                    ),
+                    CallbackDataInlineKeyboardButton(
+                        text = "🔄 Обновить",
+                        callbackData = "stats:${player.nickname}"
+                    )
+                )
+            )
+        )
+
+        if (editMessageId != null) {
+            notificationService.editMessage(chatId, editMessageId, text, markup)
+        } else {
+            notificationService.sendMessage(chatId, text, markup)
+        }
+    }
+
+    private suspend fun sendPlayerMaps(chatId: Long, nickname: String, editMessageId: Long) {
+        val player = resolvePlayer(nickname) ?: return
+        val lifetime = faceitApiClient.getPlayerLifetimeStats(player.faceitId)
+        val segments = lifetime?.segments.orEmpty()
+
+        val text = MessageFormatter.formatPlayerMaps(player, segments)
+        val markup = InlineKeyboardMarkup(
+            keyboard = listOf(
+                listOf(
+                    CallbackDataInlineKeyboardButton(
+                        text = "⬅️ Назад к статистике",
+                        callbackData = "stats:${player.nickname}"
+                    )
+                )
+            )
+        )
+
+        notificationService.editMessage(chatId, editMessageId, text, markup)
     }
 
     private suspend fun showLeaderboard(chatId: Long) {
@@ -52,4 +196,8 @@ class StatsHandler(
         val remote = faceitApiClient.getPlayerByNickname(nickname) ?: return null
         return remote.toTrackedPlayer()
     }
+
+    private data class Tuple5<A, B, C, D, E>(
+        val a: A, val b: B, val c: C, val d: D, val e: E
+    )
 }

@@ -11,7 +11,7 @@ import dev.smolyakoff.tracker.db.PlayerRepository
 /**
  * Thin coordinator that wires together domain-specific command handlers:
  *  - [TrackHandler]        : /track, /untrack
- *  - [StatsHandler]        : /stats, /players, /leaderboard
+ *  - [StatsHandler]        : /stats, /top
  *  - [SubscriptionHandler] : /start, /help, /subscribe, /unsubscribe, /status, chat member events
  */
 class CommandHandlers(
@@ -35,6 +35,7 @@ class CommandHandlers(
         faceitApiClient = faceitApiClient,
         playerRepository = playerRepository,
         matchRepository = matchRepository,
+        eloRepository = eloRepository,
         notificationService = notificationService
     )
 

@@ -1,9 +1,11 @@
 package dev.smolyakoff.tracker.bot
 
 import dev.inmo.tgbotapi.bot.TelegramBot
+import dev.inmo.tgbotapi.extensions.api.edit.text.editMessageText
 import dev.inmo.tgbotapi.extensions.api.send.sendTextMessage
 import dev.inmo.tgbotapi.types.ChatId
 import dev.inmo.tgbotapi.types.LinkPreviewOptions
+import dev.inmo.tgbotapi.types.MessageId
 import dev.inmo.tgbotapi.types.RawChatId
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardMarkup
 import dev.inmo.tgbotapi.types.message.HTMLParseMode
@@ -52,6 +54,26 @@ class NotificationService(
             true
         }.onFailure {
             logger.error("Failed to send message to chat {}: {}", chatId, it.message)
+        }.getOrDefault(false)
+    }
+
+    suspend fun editMessage(chatId: Long, messageId: Long, text: String, replyMarkup: InlineKeyboardMarkup? = null): Boolean {
+        val currentBot = bot ?: run {
+            logger.warn("Telegram bot instance is not initialized, cannot edit message in {}", chatId)
+            return false
+        }
+        return runCatching {
+            currentBot.editMessageText(
+                chatId = ChatId(RawChatId(chatId)),
+                messageId = MessageId(messageId),
+                text = text,
+                parseMode = HTMLParseMode,
+                linkPreviewOptions = LinkPreviewOptions.Disabled,
+                replyMarkup = replyMarkup
+            )
+            true
+        }.onFailure {
+            logger.error("Failed to edit message in chat {}: {}", chatId, it.message)
         }.getOrDefault(false)
     }
 }

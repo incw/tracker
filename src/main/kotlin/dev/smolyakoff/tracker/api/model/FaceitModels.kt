@@ -2,6 +2,10 @@ package dev.smolyakoff.tracker.api.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Serializable
 data class FaceitPlayerResponse(
@@ -220,24 +224,60 @@ data class MatchPlayer(
 }
 
 @Serializable
-data class PlayerLifetimeStatsResponse(
-    val lifetime: Map<String, String> = emptyMap()
+data class FaceitRankingResponse(
+    val position: Int? = null
+)
+
+@Serializable
+data class PlayerRecentStatsResponse(
+    val items: List<PlayerRecentMatchStatsItem> = emptyList()
+)
+
+@Serializable
+data class PlayerRecentMatchStatsItem(
+    val stats: Map<String, String> = emptyMap()
 ) {
-    val matches: Int
-        get() = lifetime["Matches"]?.toIntOrNull() ?: 0
-
-    val winRatePercent: Int
-        get() = lifetime["Win Rate %"]?.toIntOrNull() ?: 0
-
-    val currentWinStreak: Int
-        get() = lifetime["Current Win Streak"]?.toIntOrNull() ?: 0
-
-    val longestWinStreak: Int
-        get() = lifetime["Longest Win Streak"]?.toIntOrNull() ?: 0
-
-    val averageKdRatio: Double
-        get() = lifetime["Average K/D Ratio"]?.toDoubleOrNull() ?: 0.0
-
-    val averageHeadshotsPercent: Int
-        get() = lifetime["Average Headshots %"]?.toIntOrNull() ?: 0
+    val kills: Int get() = stats["Kills"]?.toIntOrNull() ?: 0
+    val deaths: Int get() = stats["Deaths"]?.toIntOrNull() ?: 0
 }
+
+@Serializable
+data class FaceitSegment(
+    val type: String = "",
+    val mode: String = "",
+    val label: String = "",
+    val stats: Map<String, String> = emptyMap()
+) {
+    val matches: Int get() = stats["Matches"]?.toIntOrNull() ?: 0
+    val winRatePercent: Int get() = stats["Win Rate %"]?.toIntOrNull() ?: 0
+    val averageKdRatio: Double get() = stats["Average K/D Ratio"]?.toDoubleOrNull() ?: 0.0
+    val adr: Double get() = stats["ADR"]?.toDoubleOrNull() ?: 0.0
+    val wins: Int get() = stats["Wins"]?.toIntOrNull() ?: 0
+}
+
+@Serializable
+data class PlayerLifetimeStatsResponse(
+    val lifetime: Map<String, JsonElement> = emptyMap(),
+    val segments: List<FaceitSegment> = emptyList()
+) {
+    private fun getStr(key: String): String? = (lifetime[key] as? JsonPrimitive)?.contentOrNull
+
+    val matches: Int get() = getStr("Matches")?.toIntOrNull() ?: 0
+    val winRatePercent: Int get() = getStr("Win Rate %")?.toIntOrNull() ?: 0
+    val currentWinStreak: Int get() = getStr("Current Win Streak")?.toIntOrNull() ?: 0
+    val longestWinStreak: Int get() = getStr("Longest Win Streak")?.toIntOrNull() ?: 0
+    val averageKdRatio: Double get() = getStr("Average K/D Ratio")?.toDoubleOrNull() ?: 0.0
+    val averageHeadshotsPercent: Int get() = getStr("Average Headshots %")?.toIntOrNull() ?: 0
+    val adr: Double? get() = getStr("ADR")?.toDoubleOrNull()
+    val entrySuccessRate: Int? get() {
+        val rate = getStr("Entry Success Rate")?.toDoubleOrNull() ?: return null
+        return (rate * 100).toInt()
+    }
+    val clutches1v1Wins: Int? get() = getStr("Total 1v1 Wins")?.toIntOrNull()
+    val clutches1v2Wins: Int? get() = getStr("Total 1v2 Wins")?.toIntOrNull()
+    val recentResults: List<String> get() {
+        val arr = lifetime["Recent Results"] as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    }
+}
+

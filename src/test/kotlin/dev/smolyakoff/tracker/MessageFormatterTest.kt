@@ -3,6 +3,11 @@ package dev.smolyakoff.tracker
 import dev.smolyakoff.tracker.db.TrackedPlayer
 import dev.smolyakoff.tracker.service.MessageFormatter
 import dev.smolyakoff.tracker.service.PlayerMatchDisplayData
+import dev.smolyakoff.tracker.api.model.FaceitSegment
+import dev.smolyakoff.tracker.api.model.PlayerLifetimeStatsResponse
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -182,10 +187,81 @@ class MessageFormatterTest {
     }
 
     @Test
-    fun testFormatHelpContainsSubscriptionCommands() {
+    fun testFormatHelpCommands() {
         val help = MessageFormatter.formatHelp()
-        assertTrue(help.contains("/subscribe"))
+        assertTrue(help.contains("/top"))
+        assertTrue(help.contains("/stats"))
+        assertTrue(help.contains("/track"))
+        assertTrue(help.contains("/untrack"))
         assertTrue(help.contains("/unsubscribe"))
-        assertTrue(help.contains("/status"))
+        assertFalse(help.contains("/leaderboard"))
+        assertFalse(help.contains("/players"))
+        assertFalse(help.contains("/subscribe"))
+        assertFalse(help.contains("/status"))
+    }
+
+    @Test
+    fun testFormatPlayerStatsComprehensive() {
+        val player = TrackedPlayer("p-1", "m0NESY", null, 3050, 10)
+        val lifetimeMap = mapOf(
+            "Matches" to JsonPrimitive("2500"),
+            "Win Rate %" to JsonPrimitive("58"),
+            "Current Win Streak" to JsonPrimitive("3"),
+            "Longest Win Streak" to JsonPrimitive("12"),
+            "Average K/D Ratio" to JsonPrimitive("1.35"),
+            "Average Headshots %" to JsonPrimitive("48"),
+            "ADR" to JsonPrimitive("88.5"),
+            "Entry Success Rate" to JsonPrimitive("0.56"),
+            "Total 1v1 Wins" to JsonPrimitive("450"),
+            "Total 1v2 Wins" to JsonPrimitive("210"),
+            "Recent Results" to JsonArray(listOf(
+                JsonPrimitive("1"),
+                JsonPrimitive("1"),
+                JsonPrimitive("0"),
+                JsonPrimitive("1"),
+                JsonPrimitive("1")
+            ))
+        )
+        val segments = listOf(
+            FaceitSegment("Map", "5v5", "Mirage", mapOf("Matches" to "800", "Win Rate %" to "62", "Average K/D Ratio" to "1.38", "ADR" to "91.2", "Wins" to "496")),
+            FaceitSegment("Map", "5v5", "Vertigo", mapOf("Matches" to "120", "Win Rate %" to "41", "Average K/D Ratio" to "0.95", "ADR" to "72.0", "Wins" to "49"))
+        )
+        val lifetime = PlayerLifetimeStatsResponse(lifetime = lifetimeMap, segments = segments)
+
+        val formatted = MessageFormatter.formatPlayerStats(
+            player = player,
+            lifetime = lifetime,
+            maxElo = 3200,
+            recentKd30 = 1.42,
+            recentMatchesCount = 30,
+            rankingEu = 450,
+            rankingCountry = 120,
+            countryCode = "ru"
+        )
+
+        assertTrue(formatted.contains("m0NESY"))
+        assertTrue(formatted.contains("Max: <b>3200</b>"))
+        assertTrue(formatted.contains("EU: <b>#450</b>"))
+        assertTrue(formatted.contains("RU: <b>#120</b>"))
+        assertTrue(formatted.contains("🟢 🟢 🔴 🟢 🟢"))
+        assertTrue(formatted.contains("K/D за последние 30 игр: <b>1.42</b>"))
+        assertTrue(formatted.contains("Первые дуэли (Entry): <b>56%</b> побед"))
+        assertTrue(formatted.contains("Лучшая: <b>Mirage</b>"))
+        assertTrue(formatted.contains("Худшая: <b>Vertigo</b>"))
+        assertFalse(formatted.contains("Последние 5 матчей в боте:"))
+    }
+
+    @Test
+    fun testFormatPlayerMaps() {
+        val player = TrackedPlayer("p-1", "s1mple", null, 2800, 10)
+        val segments = listOf(
+            FaceitSegment("Map", "5v5", "Nuke", mapOf("Matches" to "500", "Win Rate %" to "60", "Average K/D Ratio" to "1.30", "ADR" to "85.0", "Wins" to "300"))
+        )
+
+        val text = MessageFormatter.formatPlayerMaps(player, segments)
+        assertTrue(text.contains("Пул карт: s1mple"))
+        assertTrue(text.contains("Nuke"))
+        assertTrue(text.contains("60% WR"))
+        assertTrue(text.contains("300"))
     }
 }

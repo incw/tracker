@@ -2,10 +2,12 @@ package dev.smolyakoff.tracker.api
 
 import dev.smolyakoff.tracker.api.model.FaceitMatchDetailsResponse
 import dev.smolyakoff.tracker.api.model.FaceitPlayerResponse
+import dev.smolyakoff.tracker.api.model.FaceitRankingResponse
 import dev.smolyakoff.tracker.api.model.MatchHistoryItem
 import dev.smolyakoff.tracker.api.model.MatchHistoryResponse
 import dev.smolyakoff.tracker.api.model.MatchStatsResponse
 import dev.smolyakoff.tracker.api.model.PlayerLifetimeStatsResponse
+import dev.smolyakoff.tracker.api.model.PlayerRecentStatsResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -89,6 +91,18 @@ class FaceitApiClient(
 
     suspend fun getMatchDetails(matchId: String): FaceitMatchDetailsResponse? =
         authorizedGet<FaceitMatchDetailsResponse>("/matches/$matchId")
+
+    suspend fun getPlayerRanking(playerId: String, region: String = "EU", country: String? = null): Int? =
+        authorizedGet<FaceitRankingResponse>("/rankings/games/cs2/regions/$region/players/$playerId") {
+            if (!country.isNullOrBlank()) {
+                parameter("country", country.lowercase())
+            }
+        }?.position
+
+    suspend fun getPlayerRecentStats(playerId: String, limit: Int = 30): PlayerRecentStatsResponse? =
+        authorizedGet<PlayerRecentStatsResponse>("/players/$playerId/games/cs2/stats") {
+            parameter("limit", limit)
+        }
 
     override fun close() {
         httpClient.close()

@@ -1,11 +1,14 @@
 package dev.smolyakoff.tracker.service
 
+import dev.smolyakoff.tracker.api.model.FaceitSegment
 import dev.smolyakoff.tracker.api.model.PlayerLifetimeStatsResponse
 import dev.smolyakoff.tracker.db.MatchRecord
 import dev.smolyakoff.tracker.db.TrackedPlayer
+import dev.smolyakoff.tracker.util.countryCodeToFlag
 import dev.smolyakoff.tracker.util.escapeHtml
 import dev.smolyakoff.tracker.util.formatAdr
 import dev.smolyakoff.tracker.util.formatKd
+import dev.smolyakoff.tracker.util.formatNumber
 
 data class PlayerMatchDisplayData(
     val nickname: String,
@@ -95,36 +98,126 @@ object MessageFormatter {
         }
     }
 
+    fun calculateBestAndWorstMaps(segments: List<FaceitSegment>): Pair<FaceitSegment?, FaceitSegment?> {
+        val mapSegments = segments.filter { it.type.equals("Map", ignoreCase = true) && it.matches >= 3 }
+        if (mapSegments.isEmpty()) {
+            val anyMapSegments = segments.filter { it.type.equals("Map", ignoreCase = true) && it.matches > 0 }
+            if (anyMapSegments.isEmpty()) return null to null
+            val best = anyMapSegments.maxByOrNull { it.winRatePercent }
+            val worst = anyMapSegments.takeIf { anyMapSegments.size > 1 }?.minByOrNull { it.winRatePercent }
+            return best to (if (worst != best) worst else null)
+        }
+        val best = mapSegments.maxByOrNull { it.winRatePercent }
+        val worst = mapSegments.takeIf { mapSegments.size > 1 }?.minByOrNull { it.winRatePercent }
+        return best to (if (worst != best) worst else null)
+    }
+
     fun formatPlayerStats(
         player: TrackedPlayer,
         lifetime: PlayerLifetimeStatsResponse?,
-        recentMatches: List<MatchRecord>
+        maxElo: Int,
+        recentKd30: Double? = null,
+        recentMatchesCount: Int = 30,
+        rankingEu: Int? = null,
+        rankingCountry: Int? = null,
+        countryCode: String? = null
     ): String = buildString {
-        appendLine("📊 <b>Статистика игрока: ${player.nickname.escapeHtml()}</b>")
-        appendLine("─────────────────────")
-        appendLine("⭐️ Уровень: <b>${player.skillLevel}</b> | 🏆 Elo: <b>${player.currentElo}</b>")
+        val safeNick = player.nickname.escapeHtml()
+        val profileUrl = "https://www.faceit.com/en/players/${player.nickname}".escapeHtml()
 
-        if (lifetime != null) {
-            appendLine("🎮 Всего матчей: <b>${lifetime.matches}</b>")
-            appendLine("📈 Винрейт: <b>${lifetime.winRatePercent}%</b>")
-            appendLine("⚔️ Средний K/D: <b>${lifetime.averageKdRatio.formatKd()}</b>")
-            appendLine("🎯 Средний HS%: <b>${lifetime.averageHeadshotsPercent}%</b>")
-            appendLine("🔥 Текущий винстрик: <b>${lifetime.currentWinStreak}</b> (Макс: ${lifetime.longestWinStreak})")
+        appendLine("📊 <b>Статистика: <a href=\"$profileUrl\">$safeNick</a></b>")
+        appendLine("─────────────────────")
+        val peak = if (maxElo > player.currentElo) " (Max: <b>$maxElo</b>)" else " (Max: <b>${player.currentElo}</b>)"
+        appendLine("⭐️ Уровень: <b>${player.skillLevel}</b> | 🏆 Elo: <b>${player.currentElo}</b>$peak")
+
+        val rankParts = mutableListOf<String>()
+        if (rankingEu != null) {
+            rankParts.add("🌍 EU: <b>#${rankingEu.formatNumber()}</b>")
+        }
+        if (rankingCountry != null) {
+            val flag = countryCodeToFlag(countryCode)
+            val cLabel = countryCode?.uppercase() ?: "Country"
+            rankParts.add("$flag $cLabel: <b>#${rankingCountry.formatNumber()}</b>")
+        }
+        if (rankParts.isNotEmpty()) {
+            appendLine("🏆 Ранг: ${rankParts.joinToString(" | ")}")
         }
 
-        if (recentMatches.isNotEmpty()) {
+        if (lifetime != null && lifetime.recentResults.isNotEmpty()) {
+            val cubes = lifetime.recentResults.take(5).joinToString(" ") { r ->
+                if (r == "1") "🟢" else "🔴"
+            }
+            val winsCount = lifetime.recentResults.take(5).count { it == "1" }
+            val formWr = (winsCount * 100) / lifetime.recentResults.take(5).size
+            appendLine("🔥 Форма: $cubes ($formWr% WR)")
+        }
+
+        if (lifetime != null) {
             appendLine("─────────────────────")
-            appendLine("🕒 <b>Последние ${recentMatches.size} матчей в боте:</b>")
-            recentMatches.forEach { m ->
-                val res = if (m.result) "🟢" else "🔴"
-                val eloDiff = if (m.eloChange > 0) "+${m.eloChange}" else "${m.eloChange}"
-                appendLine("$res ${m.map.escapeHtml()} (${m.score.escapeHtml()}) | K/D: ${m.kd.formatKd()} | Elo: $eloDiff")
+            appendLine("🎮 <b>Общие показатели (за ${lifetime.matches.formatNumber()} матчей):</b>")
+            appendLine("📈 Винрейт: <b>${lifetime.winRatePercent}%</b> | Стрик: <b>${lifetime.currentWinStreak}</b> (Макс: ${lifetime.longestWinStreak})")
+
+            val adrText = lifetime.adr?.let { " | ADR: <b>${it.formatAdr()}</b>" } ?: ""
+            appendLine("⚔️ Средний K/D: <b>${lifetime.averageKdRatio.formatKd()}</b>$adrText | HS: <b>${lifetime.averageHeadshotsPercent}%</b>")
+
+            if (recentKd30 != null && recentKd30 > 0.0) {
+                appendLine("🔫 K/D за последние $recentMatchesCount игр: <b>${recentKd30.formatKd()}</b>")
+            }
+
+            if (lifetime.entrySuccessRate != null && lifetime.entrySuccessRate!! > 0) {
+                appendLine("⚡ Первые дуэли (Entry): <b>${lifetime.entrySuccessRate}%</b> побед")
+            }
+
+            val clutches = mutableListOf<String>()
+            lifetime.clutches1v1Wins?.takeIf { it > 0 }?.let { clutches.add("1v1: <b>$it</b>") }
+            lifetime.clutches1v2Wins?.takeIf { it > 0 }?.let { clutches.add("1v2: <b>$it</b>") }
+            if (clutches.isNotEmpty()) {
+                appendLine("🥷 Клатчи: ${clutches.joinToString(" | ")}")
+            }
+
+            val (bestMap, worstMap) = calculateBestAndWorstMaps(lifetime.segments)
+            if (bestMap != null || worstMap != null) {
+                appendLine("─────────────────────")
+                appendLine("🗺 <b>Сигнатурные карты:</b>")
+                if (bestMap != null) {
+                    appendLine("👑 Лучшая: <b>${bestMap.label.escapeHtml()}</b> (${bestMap.winRatePercent}% WR, KD ${bestMap.averageKdRatio.formatKd()}, ${bestMap.matches} игр)")
+                }
+                if (worstMap != null && worstMap != bestMap) {
+                    appendLine("💀 Худшая: <b>${worstMap.label.escapeHtml()}</b> (${worstMap.winRatePercent}% WR, KD ${worstMap.averageKdRatio.formatKd()}, ${worstMap.matches} игр)")
+                }
             }
         }
     }
 
+    fun formatPlayerMaps(
+        player: TrackedPlayer,
+        segments: List<FaceitSegment>
+    ): String = buildString {
+        appendLine("🗺 <b>Пул карт: ${player.nickname.escapeHtml()}</b>")
+        appendLine("─────────────────────")
+        val mapSegments = segments
+            .filter { it.type.equals("Map", ignoreCase = true) && it.matches > 0 }
+            .sortedByDescending { it.matches }
+
+        if (mapSegments.isEmpty()) {
+            appendLine("<i>Нет данных по картам на FACEIT.</i>")
+            return@buildString
+        }
+
+        mapSegments.forEach { s ->
+            val emoji = when {
+                s.winRatePercent >= 55 -> "🟢"
+                s.winRatePercent <= 45 -> "🔴"
+                else -> "🟡"
+            }
+            val adrPart = if (s.adr > 0) " | ADR: <b>${s.adr.formatAdr()}</b>" else ""
+            appendLine("$emoji <b>${s.label.escapeHtml()}</b>: <b>${s.winRatePercent}% WR</b> (${s.matches} матчей)")
+            appendLine("    ⚔️ K/D: <b>${s.averageKdRatio.formatKd()}</b>$adrPart | Побед: <b>${s.wins}</b>")
+        }
+    }
+
     fun formatLeaderboard(players: List<TrackedPlayer>): String = buildString {
-        appendLine("🏆 <b>Таблица лидеров тусовки:</b>")
+        appendLine("🏆 <b>Топ игроков по Elo:</b>")
         appendLine("─────────────────────")
         if (players.isEmpty()) {
             appendLine("Нет отслеживаемых игроков. Добавьте через /track <ник>")
@@ -147,14 +240,11 @@ object MessageFormatter {
         appendLine("🤖 <b>FACEIT CS2 Tracker Bot — Справка</b>")
         appendLine("─────────────────────")
         appendLine("📌 <b>Основные команды:</b>")
-        appendLine("/track <code>ник</code> или <code>[ник1, ник2]</code> — начать отслеживать игроков (до 5)")
-        appendLine("/untrack <code>ник</code> или <code>[ник1, ник2]</code> — прекратить отслеживание")
-        appendLine("/players — список отслеживаемых игроков")
-        appendLine("/stats <code>ник</code> — статистика игрока")
-        appendLine("/leaderboard — рейтинг игроков по Elo")
-        appendLine("/subscribe — включить уведомления в этом чате")
+        appendLine("/track <code>ник</code> — начать отслеживать игрока")
+        appendLine("/untrack <code>ник</code> — прекратить отслеживание")
+        appendLine("/top — таблица лидеров по Elo")
+        appendLine("/stats <code>[ник]</code> — подробная статистика, форма, карты и ранг")
         appendLine("/unsubscribe — отключить уведомления в этом чате")
-        appendLine("/status — статус подписки текущего чата")
         appendLine("/help — это меню")
         appendLine()
         appendLine("📌 <b>Вердикты в команде (из 5 игроков):</b>")
