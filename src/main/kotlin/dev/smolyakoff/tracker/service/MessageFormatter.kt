@@ -159,7 +159,12 @@ object MessageFormatter {
             }
 
             if (lifetime.entrySuccessRate != null && lifetime.entrySuccessRate!! > 0) {
-                appendLine("⚡ Первые дуэли (Entry): <b>${lifetime.entrySuccessRate}%</b> побед")
+                val countPart = if (lifetime.totalEntryWins != null && lifetime.totalEntryCount != null && lifetime.totalEntryCount!! > 0) {
+                    " (${lifetime.totalEntryWins!!.formatNumber()}/${lifetime.totalEntryCount!!.formatNumber()})"
+                } else {
+                    " побед"
+                }
+                appendLine("⚡ Первые дуэли (Entry): <b>${lifetime.entrySuccessRate}%</b>$countPart")
             }
 
             val clutches = mutableListOf<String>()

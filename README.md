@@ -34,7 +34,7 @@ version: "3.8"
 
 services:
   faceit-tracker:
-    image: ghcr.io/ВАШ_GITHUB_ЛОГИН/tracker:latest
+    image: ghcr.io/incw/tracker:latest
     container_name: faceit-tracker
     restart: unless-stopped
     env_file:

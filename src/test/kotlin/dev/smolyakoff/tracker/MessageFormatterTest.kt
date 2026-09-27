@@ -212,6 +212,8 @@ class MessageFormatterTest {
             "Average Headshots %" to JsonPrimitive("48"),
             "ADR" to JsonPrimitive("88.5"),
             "Entry Success Rate" to JsonPrimitive("0.56"),
+            "Total Entry Wins" to JsonPrimitive("320"),
+            "Total Entry Count" to JsonPrimitive("571"),
             "Total 1v1 Wins" to JsonPrimitive("450"),
             "Total 1v2 Wins" to JsonPrimitive("210"),
             "Recent Results" to JsonArray(listOf(
@@ -244,12 +246,30 @@ class MessageFormatterTest {
         assertTrue(formatted.contains("RU: <b>#120</b>"))
         assertTrue(formatted.contains("🟢 🟢 🔴 🟢 🟢"))
         assertTrue(formatted.contains("K/D за последние 30 игр: <b>1.42</b>"))
-        assertTrue(formatted.contains("Первые дуэли (Entry): <b>56%</b> побед"))
+        assertTrue(formatted.contains("Первые дуэли (Entry): <b>56%</b> (320/571)"))
         assertTrue(formatted.contains("👑 Лучшая: <b>Mirage</b> (K/D: <b>1.38</b> | Рейтинг:"))
         assertTrue(formatted.contains("💀 Худшая: <b>Vertigo</b> (K/D: <b>0.95</b> | Рейтинг:"))
         assertFalse(formatted.contains("% WR, KD"))
         assertFalse(formatted.contains("игр)"))
         assertFalse(formatted.contains("Последние 5 матчей в боте:"))
+    }
+
+    @Test
+    fun testFormatPlayerStatsWithoutEntryCounts() {
+        val player = TrackedPlayer("p-1", "m0NESY", null, 3050, 10)
+        val lifetimeMap = mapOf(
+            "Matches" to JsonPrimitive("2500"),
+            "Win Rate %" to JsonPrimitive("58"),
+            "Current Win Streak" to JsonPrimitive("3"),
+            "Longest Win Streak" to JsonPrimitive("12"),
+            "Average K/D Ratio" to JsonPrimitive("1.35"),
+            "Average Headshots %" to JsonPrimitive("48"),
+            "ADR" to JsonPrimitive("88.5"),
+            "Entry Success Rate" to JsonPrimitive("0.56")
+        )
+        val lifetime = PlayerLifetimeStatsResponse(lifetime = lifetimeMap)
+        val formatted = MessageFormatter.formatPlayerStats(player = player, lifetime = lifetime)
+        assertTrue(formatted.contains("Первые дуэли (Entry): <b>56%</b> побед"))
     }
 
     @Test

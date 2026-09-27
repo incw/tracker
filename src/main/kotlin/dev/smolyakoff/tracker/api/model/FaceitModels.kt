@@ -287,6 +287,8 @@ data class PlayerLifetimeStatsResponse(
         val rate = getStr("Entry Success Rate")?.toDoubleOrNull() ?: return null
         return (rate * 100).toInt()
     }
+    val totalEntryWins: Int? get() = getStr("Total Entry Wins")?.toIntOrNull()
+    val totalEntryCount: Int? get() = getStr("Total Entry Count")?.toIntOrNull()
     val clutches1v1Wins: Int? get() = getStr("Total 1v1 Wins")?.toIntOrNull()
     val clutches1v2Wins: Int? get() = getStr("Total 1v2 Wins")?.toIntOrNull()
     val recentResults: List<String> get() {
