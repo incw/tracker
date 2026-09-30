@@ -68,64 +68,11 @@ data class FaceitMatchDetailsResponse(
     val status: String = "",
     @SerialName("started_at") val startedAt: Long = 0L,
     @SerialName("finished_at") val finishedAt: Long = 0L,
-    val voting: MatchVoting? = null,
-    val teams: MatchDetailsTeams? = null
+    val voting: MatchVoting? = null
 ) {
     val durationMinutes: Long?
         get() = if (startedAt > 0L && finishedAt > startedAt) (finishedAt - startedAt) / 60L else null
-
-    val pickedMap: String?
-        get() = voting?.map?.pick?.firstOrNull()
 }
-
-@Serializable
-data class MatchDetailsTeams(
-    val faction1: MatchFaction? = null,
-    val faction2: MatchFaction? = null
-) {
-    val allPlayers: List<MatchFactionPlayer>
-        get() = (faction1?.roster ?: emptyList()) + (faction2?.roster ?: emptyList())
-}
-
-@Serializable
-data class MatchFaction(
-    @SerialName("faction_id") val factionId: String = "",
-    val name: String = "",
-    val roster: List<MatchFactionPlayer> = emptyList()
-)
-
-@Serializable
-data class MatchFactionPlayer(
-    @SerialName("player_id") val playerId: String,
-    val nickname: String = "",
-    val avatar: String? = null
-)
-
-@Serializable
-data class PlayerBansResponse(
-    val items: List<PlayerBanItem> = emptyList(),
-    val start: Int = 0,
-    val end: Int = 0
-)
-
-@Serializable
-data class PlayerBanItem(
-    val nickname: String = "",
-    val type: String = "",
-    val reason: String = "",
-    @SerialName("starts_at") val startsAt: Long = 0L,
-    @SerialName("ends_at") val endsAt: Long = 0L,
-    @SerialName("user_id") val userId: String = ""
-) {
-    val isAfkOrDodge: Boolean
-        get() {
-            val t = type.lowercase()
-            val r = reason.lowercase()
-            return t.contains("afk") || t.contains("leave") || t.contains("dodge") || t.contains("cancel") ||
-                    r.contains("afk") || r.contains("leave") || r.contains("dodge") || r.contains("cancel")
-        }
-}
-
 
 @Serializable
 data class MatchVoting(

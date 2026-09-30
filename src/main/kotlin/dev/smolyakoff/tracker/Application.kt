@@ -32,7 +32,6 @@ class TrackerApp(
     val eloRepository = EloRepository()
     val wordReactionRepository = WordReactionRepository()
     val wordReactionService = dev.smolyakoff.tracker.service.WordReactionService(wordReactionRepository)
-    val activeMatchRepository = ActiveMatchRepository()
 
     val rateLimiter = RateLimiter(capacity = 8.0, refillRatePerSecond = 8.0)
     val httpClient = HttpClient(CIO) {
@@ -76,7 +75,6 @@ class TrackerApp(
         matchRepository = matchRepository,
         eloTracker = eloTracker,
         notificationService = notificationService,
-        activeMatchRepository = activeMatchRepository,
         pollIntervalSeconds = config.pollIntervalSeconds
     )
 

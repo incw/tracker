@@ -6,8 +6,6 @@ import dev.smolyakoff.tracker.api.model.FaceitRankingResponse
 import dev.smolyakoff.tracker.api.model.MatchHistoryItem
 import dev.smolyakoff.tracker.api.model.MatchHistoryResponse
 import dev.smolyakoff.tracker.api.model.MatchStatsResponse
-import dev.smolyakoff.tracker.api.model.PlayerBanItem
-import dev.smolyakoff.tracker.api.model.PlayerBansResponse
 import dev.smolyakoff.tracker.api.model.PlayerLifetimeStatsResponse
 import dev.smolyakoff.tracker.api.model.PlayerRecentStatsResponse
 import io.ktor.client.*
@@ -105,11 +103,6 @@ class FaceitApiClient(
         authorizedGet<PlayerRecentStatsResponse>("/players/$playerId/games/cs2/stats") {
             parameter("limit", limit)
         }
-
-    suspend fun getPlayerBans(playerId: String, limit: Int = 3): List<PlayerBanItem> =
-        authorizedGet<PlayerBansResponse>("/players/$playerId/bans") {
-            parameter("limit", limit)
-        }?.items ?: emptyList()
 
     override fun close() {
         httpClient.close()

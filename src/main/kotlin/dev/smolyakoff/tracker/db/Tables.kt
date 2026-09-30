@@ -1,7 +1,6 @@
 package dev.smolyakoff.tracker.db
 
 import org.jetbrains.exposed.dao.id.IntIdTable
-import org.jetbrains.exposed.sql.Table
 
 object TrackedPlayersTable : IntIdTable("tracked_players") {
     val faceitId = varchar("faceit_id", 64).uniqueIndex()
@@ -78,17 +77,3 @@ object ChatSettingsTable : IntIdTable("chat_settings") {
     val reactionsAllowedMode = varchar("reactions_allowed_mode", 16).default("ADMIN")
     val updatedAt = long("updated_at")
 }
-
-object ActiveMatchesTable : Table("active_matches") {
-    val matchId = varchar("match_id", 100)
-    val chatId = long("chat_id").index()
-    val playerIds = text("player_ids") // comma-separated faceit_id
-    val playerNicknames = text("player_nicknames") // comma-separated nicknames
-    val status = varchar("status", 30) // CONFIGURING, READY, ONGOING
-    val startedAt = long("started_at").default(0L)
-    val notifiedStart = bool("notified_start").default(false)
-    val createdAt = long("created_at")
-
-    override val primaryKey = PrimaryKey(matchId, chatId)
-}
-
