@@ -64,9 +64,11 @@ class WordReactionHandler(
         val chatId = message.chatId
         val reaction = wordReactionService.findMatchingReaction(chatId, text) ?: return
 
-        // Anti-spam cooldown (10 seconds per trigger in this chat)
-        if (!wordReactionService.checkAndApplyCooldown(chatId, reaction.trigger, cooldownSeconds = 10L)) {
-            return
+        // Anti-spam cooldown: 5 seconds for messages and stickers; no cooldown for emoji reactions
+        if (reaction.responseType != ReactionType.EMOJI) {
+            if (!wordReactionService.checkAndApplyCooldown(chatId, reaction.trigger, cooldownSeconds = 5L)) {
+                return
+            }
         }
 
         val messageId = message.messageId.long

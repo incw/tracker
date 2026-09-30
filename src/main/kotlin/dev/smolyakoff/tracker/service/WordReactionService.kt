@@ -100,7 +100,7 @@ class WordReactionService(
     /**
      * Checks cooldown. If passed, updates timestamp and returns true. Otherwise false.
      */
-    fun checkAndApplyCooldown(chatId: Long, trigger: String, cooldownSeconds: Long = 10L): Boolean {
+    fun checkAndApplyCooldown(chatId: Long, trigger: String, cooldownSeconds: Long = 5L): Boolean {
         val key = chatId to normalizeTrigger(trigger)
         val now = System.currentTimeMillis()
         val cooldownMillis = cooldownSeconds * 1000L

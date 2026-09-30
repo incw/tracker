@@ -67,15 +67,15 @@ class WordReactionServiceTest {
         val chatId = 100L
         val trigger = "симиль"
 
-        // First attempt should succeed
-        assertTrue(service.checkAndApplyCooldown(chatId, trigger, cooldownSeconds = 10))
+        // First attempt should succeed (default 5s)
+        assertTrue(service.checkAndApplyCooldown(chatId, trigger))
 
         // Immediate second attempt should fail
-        assertFalse(service.checkAndApplyCooldown(chatId, trigger, cooldownSeconds = 10))
+        assertFalse(service.checkAndApplyCooldown(chatId, trigger, cooldownSeconds = 5))
 
         // Different trigger or chat should succeed
-        assertTrue(service.checkAndApplyCooldown(chatId, "другое", cooldownSeconds = 10))
-        assertTrue(service.checkAndApplyCooldown(200L, trigger, cooldownSeconds = 10))
+        assertTrue(service.checkAndApplyCooldown(chatId, "другое", cooldownSeconds = 5))
+        assertTrue(service.checkAndApplyCooldown(200L, trigger, cooldownSeconds = 5))
     }
 
     @Test
