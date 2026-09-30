@@ -90,11 +90,19 @@ class WordReactionHandler(
                 )
             }
             ReactionType.EMOJI -> {
-                notificationService.setMessageReaction(
+                val success = notificationService.setMessageReaction(
                     chatId = chatId,
                     messageId = messageId,
                     emoji = reaction.responseContent
                 )
+                if (!success) {
+                    notificationService.sendMessage(
+                        chatId = chatId,
+                        text = reaction.responseContent,
+                        replyToMessageId = messageId,
+                        quote = quote
+                    )
+                }
             }
         }
     }
@@ -271,8 +279,10 @@ class WordReactionHandler(
         val (reactionType, responseContent, displayDesc) = when {
             rawResponse.isNotBlank() -> {
                 val cleanResponse = rawResponse.removePrefix("reaction:").trim()
-                if (WordReactionService.isSingleEmoji(cleanResponse) || rawResponse.startsWith("reaction:", ignoreCase = true)) {
+                if (WordReactionService.isAllowedTelegramReaction(cleanResponse) || rawResponse.startsWith("reaction:", ignoreCase = true)) {
                     Triple(ReactionType.EMOJI, cleanResponse, "эмодзи-реакцию $cleanResponse")
+                } else if (WordReactionService.isSingleEmoji(cleanResponse)) {
+                    Triple(ReactionType.TEXT, cleanResponse, "эмодзи в ответ: $cleanResponse")
                 } else {
                     Triple(ReactionType.TEXT, rawResponse, "текст: «${rawResponse.escapeHtml()}»")
                 }
@@ -284,8 +294,10 @@ class WordReactionHandler(
             replied is TextContent -> {
                 val repliedText = replied.text
                 val cleanText = repliedText.removePrefix("reaction:").trim()
-                if (WordReactionService.isSingleEmoji(cleanText)) {
+                if (WordReactionService.isAllowedTelegramReaction(cleanText) || repliedText.startsWith("reaction:", ignoreCase = true)) {
                     Triple(ReactionType.EMOJI, cleanText, "эмодзи-реакцию $cleanText")
+                } else if (WordReactionService.isSingleEmoji(cleanText)) {
+                    Triple(ReactionType.TEXT, cleanText, "эмодзи в ответ: $cleanText")
                 } else {
                     Triple(ReactionType.TEXT, repliedText, "текст: «${repliedText.escapeHtml()}»")
                 }

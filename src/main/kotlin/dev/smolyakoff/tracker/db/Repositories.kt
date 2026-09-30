@@ -347,13 +347,14 @@ class ChatTrackedPlayerRepository(
 
 class WordReactionRepository {
     suspend fun saveReaction(reaction: WordReaction): WordReaction = dbQuery {
+        val normalizedTrigger = reaction.trigger.trim().lowercase().replace('ё', 'е')
         val existing = WordReactionsTable.selectAll()
-            .where { (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq reaction.trigger.lowercase()) }
+            .where { (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq normalizedTrigger) }
             .singleOrNull()
 
         if (existing != null) {
             WordReactionsTable.update({
-                (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq reaction.trigger.lowercase())
+                (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq normalizedTrigger)
             }) {
                 it[responseType] = reaction.responseType.name
                 it[responseContent] = reaction.responseContent
@@ -363,19 +364,20 @@ class WordReactionRepository {
         } else {
             WordReactionsTable.insert {
                 it[chatId] = reaction.chatId
-                it[trigger] = reaction.trigger.lowercase()
+                it[trigger] = normalizedTrigger
                 it[responseType] = reaction.responseType.name
                 it[responseContent] = reaction.responseContent
                 it[createdBy] = reaction.createdBy
                 it[createdAt] = reaction.createdAt
             }
         }
-        reaction
+        reaction.copy(trigger = normalizedTrigger)
     }
 
     suspend fun deleteReaction(chatId: Long, trigger: String): Boolean = dbQuery {
+        val normalizedTrigger = trigger.trim().lowercase().replace('ё', 'е')
         val deleted = WordReactionsTable.deleteWhere {
-            (WordReactionsTable.chatId eq chatId) and (WordReactionsTable.trigger eq trigger.lowercase())
+            (WordReactionsTable.chatId eq chatId) and (WordReactionsTable.trigger eq normalizedTrigger)
         }
         deleted > 0
     }

@@ -28,7 +28,8 @@ class WordReactionService(
         cache.clear()
         for (r in all) {
             val chatMap = cache.getOrPut(r.chatId) { ConcurrentHashMap() }
-            chatMap[r.trigger.lowercase()] = r
+            val norm = normalizeTrigger(r.trigger)
+            chatMap[norm] = r.copy(trigger = norm)
         }
 
         val settings = chatSettingsRepository.getAllSettings()
@@ -54,7 +55,7 @@ class WordReactionService(
         content: String,
         createdBy: Long
     ): WordReaction {
-        val normalized = trigger.trim().lowercase()
+        val normalized = normalizeTrigger(trigger)
         val reaction = WordReaction(
             chatId = chatId,
             trigger = normalized,
@@ -69,7 +70,7 @@ class WordReactionService(
     }
 
     suspend fun deleteReaction(chatId: Long, trigger: String): Boolean {
-        val normalized = trigger.trim().lowercase()
+        val normalized = normalizeTrigger(trigger)
         val deleted = repository.deleteReaction(chatId, normalized)
         cache[chatId]?.remove(normalized)
         return deleted
@@ -81,17 +82,15 @@ class WordReactionService(
 
     /**
      * Checks if text contains any configured trigger for the chat (using unicode word boundary matching).
+     * Case-insensitive, treats 'е' and 'ё' as identical.
      * Returns matching WordReaction if found, or null.
      */
     fun findMatchingReaction(chatId: Long, text: String): WordReaction? {
         val chatReactions = cache[chatId] ?: return null
         if (chatReactions.isEmpty()) return null
 
-        val lowerText = text.lowercase()
-
-        // Check each trigger
         for ((trigger, reaction) in chatReactions) {
-            if (matchesWordBoundary(lowerText, trigger)) {
+            if (matchesWordBoundary(text, trigger)) {
                 return reaction
             }
         }
@@ -102,7 +101,7 @@ class WordReactionService(
      * Checks cooldown. If passed, updates timestamp and returns true. Otherwise false.
      */
     fun checkAndApplyCooldown(chatId: Long, trigger: String, cooldownSeconds: Long = 10L): Boolean {
-        val key = chatId to trigger.lowercase()
+        val key = chatId to normalizeTrigger(trigger)
         val now = System.currentTimeMillis()
         val cooldownMillis = cooldownSeconds * 1000L
 
@@ -116,24 +115,74 @@ class WordReactionService(
 
     companion object {
         /**
+         * Normalizes a trigger word: trims, converts to lowercase, and replaces 'ё' with 'е'.
+         */
+        fun normalizeTrigger(trigger: String): String =
+            trigger.trim().lowercase().replace('ё', 'е')
+
+        /**
+         * Builds a regex pattern for the trigger where 'е' and 'ё' are treated as identical.
+         */
+        fun buildTriggerRegexPattern(trigger: String): String {
+            val trimmed = trigger.trim()
+            val sb = StringBuilder()
+            for (ch in trimmed) {
+                if (ch == 'е' || ch == 'ё' || ch == 'Е' || ch == 'Ё') {
+                    sb.append("[её]")
+                } else {
+                    if (ch in "\\^$.*+?()[]{}|") {
+                        sb.append('\\').append(ch)
+                    } else {
+                        sb.append(ch)
+                    }
+                }
+            }
+            return sb.toString()
+        }
+
+        /**
          * Checks if the pattern occurs as a distinct word or phrase in text.
+         * Case-insensitive, treats 'е' and 'ё' as identical.
          * Uses Unicode character classes (\p{L}\p{N}_) as word boundary delimiters.
          */
         fun matchesWordBoundary(text: String, trigger: String): Boolean {
-            val escaped = Regex.escape(trigger.lowercase())
-            val regex = Regex("(^|[^\\p{L}\\p{N}_])$escaped($|[^\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
+            val pattern = buildTriggerRegexPattern(trigger)
+            val regex = Regex("(^|[^\\p{L}\\p{N}_])$pattern($|[^\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
             return regex.containsMatchIn(text)
         }
 
         /**
          * Extracts the exact substring matching the trigger from text with original casing,
          * preserving Unicode word boundaries for Telegram quote reply.
+         * Case-insensitive, treats 'е' and 'ё' as identical.
          */
         fun findMatchingQuote(text: String, trigger: String): String? {
-            val escaped = Regex.escape(trigger.trim())
-            val regex = Regex("(^|[^\\p{L}\\p{N}_])($escaped)($|[^\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
+            val pattern = buildTriggerRegexPattern(trigger)
+            val regex = Regex("(^|[^\\p{L}\\p{N}_])($pattern)($|[^\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
             val match = regex.find(text) ?: return null
             return match.groups[2]?.value
+        }
+
+        /**
+         * Telegram Bot API whitelist of emojis supported as native message reactions.
+         */
+        val TELEGRAM_ALLOWED_REACTION_EMOJIS = setOf(
+            "👍", "👎", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱",
+            "🤬", "😢", "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊", "🤡",
+            "🥱", "🥴", "😍", "🐳", "❤‍🔥", "🌚", "🌭", "💯", "🤣", "⚡",
+            "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾", "💋", "🖕", "😈",
+            "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈", "😇", "😨",
+            "🤝", "✍", "🤗", "🫡", "🎅", "🎄", "☃", "💅", "🤪", "🗿",
+            "🆒", "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾", "🤷‍♂",
+            "🤷", "🤷‍♀", "😡"
+        )
+
+        /**
+         * Checks if the given emoji is in the Telegram Bot API allowed reaction list.
+         */
+        fun isAllowedTelegramReaction(emoji: String): Boolean {
+            val clean = emoji.trim().removeSuffix("\uFE0F")
+            return TELEGRAM_ALLOWED_REACTION_EMOJIS.any { it.removeSuffix("\uFE0F") == clean }
         }
 
         /**

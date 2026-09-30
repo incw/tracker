@@ -148,10 +148,12 @@ class WordReactionServiceTest {
     @Test
     fun `test batch reactions matching for array of triggers`() = runTest {
         val repo = mockk<WordReactionRepository>()
-        val service = WordReactionService(repo)
+        val settingsRepo = mockk<dev.smolyakoff.tracker.db.ChatSettingsRepository>()
+        val service = WordReactionService(repo, settingsRepo)
         val chatId = 777L
 
         coEvery { repo.getAllReactions() } returns emptyList()
+        coEvery { settingsRepo.getAllSettings() } returns emptyMap()
         service.initCache()
 
         val triggers = listOf("симиль", "симпл", "s1mple")
@@ -175,5 +177,83 @@ class WordReactionServiceTest {
 
         // Unrelated word does not match
         assertNull(service.findMatchingReaction(chatId, "просто текст"))
+    }
+
+    @Test
+    fun `test case and e-yo insensitivity matching`() = runTest {
+        val repo = mockk<WordReactionRepository>()
+        val settingsRepo = mockk<dev.smolyakoff.tracker.db.ChatSettingsRepository>()
+        val service = WordReactionService(repo, settingsRepo)
+        val chatId = 888L
+
+        coEvery { repo.getAllReactions() } returns emptyList()
+        coEvery { settingsRepo.getAllSettings() } returns emptyMap()
+        service.initCache()
+
+        // 1. Add reaction with 'але'
+        val reactionAle = WordReaction(
+            id = 1,
+            chatId = chatId,
+            trigger = "але",
+            responseType = ReactionType.TEXT,
+            responseContent = "да-да",
+            createdBy = 101L
+        )
+        coEvery { repo.saveReaction(any()) } returns reactionAle
+        service.addReaction(chatId, "але", ReactionType.TEXT, "да-да", 101L)
+
+        // Matches both 'е' and 'ё', regardless of case
+        assertNotNull(service.findMatchingReaction(chatId, "але кто это?"))
+        assertNotNull(service.findMatchingReaction(chatId, "алё кто это?"))
+        assertNotNull(service.findMatchingReaction(chatId, "АЛЕ кто это?"))
+        assertNotNull(service.findMatchingReaction(chatId, "АЛЁ кто это?"))
+        assertNotNull(service.findMatchingReaction(chatId, "АлЁ кто это?"))
+
+        // Word boundaries still respected
+        assertNull(service.findMatchingReaction(chatId, "валенок"))
+        assertNull(service.findMatchingReaction(chatId, "далеко"))
+
+        // Quote preserves original case and original letter (ё or е) from user's message
+        assertEquals("АЛЁ", WordReactionService.findMatchingQuote("Слушай, АЛЁ!", "але"))
+        assertEquals("алё", WordReactionService.findMatchingQuote("Слушай, алё!", "але"))
+        assertEquals("АЛЕ", WordReactionService.findMatchingQuote("Слушай, АЛЕ!", "але"))
+        assertEquals("але", WordReactionService.findMatchingQuote("Слушай, але!", "алё"))
+
+        // 2. Add reaction with 'ёлка'
+        val reactionElka = WordReaction(
+            id = 2,
+            chatId = chatId,
+            trigger = "елка",
+            responseType = ReactionType.TEXT,
+            responseContent = "праздник",
+            createdBy = 101L
+        )
+        coEvery { repo.saveReaction(any()) } returns reactionElka
+        service.addReaction(chatId, "ёлка", ReactionType.TEXT, "праздник", 101L)
+
+        assertNotNull(service.findMatchingReaction(chatId, "красивая елка"))
+        assertNotNull(service.findMatchingReaction(chatId, "красивая ёлка"))
+        assertNotNull(service.findMatchingReaction(chatId, "красивая ЕЛКА"))
+        assertNotNull(service.findMatchingReaction(chatId, "красивая ЁЛКА"))
+    }
+
+    @Test
+    fun `test telegram allowed reaction emojis`() {
+        // Supported native emojis
+        assertTrue(WordReactionService.isAllowedTelegramReaction("🤡"))
+        assertTrue(WordReactionService.isAllowedTelegramReaction("🔥"))
+        assertTrue(WordReactionService.isAllowedTelegramReaction("👍"))
+        assertTrue(WordReactionService.isAllowedTelegramReaction("👌"))
+        assertTrue(WordReactionService.isAllowedTelegramReaction("❤️"))
+
+        // Unsupported emojis (like beer) must be false
+        assertFalse(WordReactionService.isAllowedTelegramReaction("🍺"))
+        assertFalse(WordReactionService.isAllowedTelegramReaction("🍻"))
+        assertFalse(WordReactionService.isAllowedTelegramReaction("🍕"))
+        assertFalse(WordReactionService.isAllowedTelegramReaction("🥩"))
+
+        // But they are still valid emojis according to isSingleEmoji
+        assertTrue(WordReactionService.isSingleEmoji("🍺"))
+        assertTrue(WordReactionService.isSingleEmoji("🍻"))
     }
 }
