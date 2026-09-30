@@ -42,18 +42,9 @@ class WordReactionHandler(
             handleWordCommand(context, message, args)
         }
 
-        // Default /word without args
-        onCommand("word") { message ->
-            sendHelp(message.chatId)
-        }
-
         // Admin-only /settings command
         onCommandWithArgs("settings") { message, args ->
             handleSettingsCommand(context, message, args)
-        }
-
-        onCommand("settings") { message ->
-            handleSettingsCommand(context, message, emptyArray())
         }
 
         // Listener for ordinary text messages to trigger auto-responses

@@ -31,10 +31,6 @@ class StatsHandler(
     suspend fun register(context: BehaviourContext) = with(context) {
         onCommand("top") { message -> showLeaderboard(message.chatId) }
 
-        onCommand("stats") { message ->
-            showStatsMenuOrPlayer(message.chatId)
-        }
-
         onCommandWithArgs("stats") { message, args ->
             val nickname = args.firstOrNull()?.trim()
             if (nickname.isNullOrBlank()) {
