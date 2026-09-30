@@ -2,13 +2,13 @@ package dev.smolyakoff.tracker.nades
 
 import dev.inmo.tgbotapi.extensions.api.answers.answer
 import dev.inmo.tgbotapi.extensions.behaviour_builder.BehaviourContext
-import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onCommand
 import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onCommandWithArgs
 import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onMessageDataCallbackQuery
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardButtons.CallbackDataInlineKeyboardButton
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardButtons.URLInlineKeyboardButton
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardMarkup
 import dev.inmo.tgbotapi.types.message.abstracts.ChatMessage
+import dev.inmo.tgbotapi.types.message.content.TextContent
 import dev.smolyakoff.tracker.bot.NotificationService
 import dev.smolyakoff.tracker.util.escapeHtml
 import org.slf4j.LoggerFactory
@@ -20,32 +20,16 @@ class NadeHandler(
     private val ChatMessage.chatId: Long get() = chat.id.chatId.long
 
     suspend fun register(context: BehaviourContext) = with(context) {
-        onCommand("nades") { message ->
-            sendMapsMenu(message.chatId)
-        }
-
         onCommandWithArgs("nades") { message, args ->
             handleNadeCommandWithArgs(message.chatId, null, args)
-        }
-
-        onCommand("smoke") { message ->
-            sendMapsMenu(message.chatId, defaultType = NadeType.SMOKE)
         }
 
         onCommandWithArgs("smoke") { message, args ->
             handleNadeCommandWithArgs(message.chatId, NadeType.SMOKE, args)
         }
 
-        onCommand("flash") { message ->
-            sendMapsMenu(message.chatId, defaultType = NadeType.FLASH)
-        }
-
         onCommandWithArgs("flash") { message, args ->
             handleNadeCommandWithArgs(message.chatId, NadeType.FLASH, args)
-        }
-
-        onCommand("molotov") { message ->
-            sendMapsMenu(message.chatId, defaultType = NadeType.MOLOTOV)
         }
 
         onCommandWithArgs("molotov") { message, args ->
@@ -56,6 +40,7 @@ class NadeHandler(
             val data = query.data
             val chatId = query.message.chat.id.chatId.long
             val messageId = query.message.messageId.long
+            val isTextMessage = query.message.content is TextContent
 
             if (!data.startsWith("nade:")) return@onMessageDataCallbackQuery
 
@@ -65,19 +50,19 @@ class NadeHandler(
             when (parts.getOrNull(1)) {
                 "maps" -> {
                     val defaultType = parts.getOrNull(2)?.let { NadeType.fromString(it) }
-                    editToMapsMenu(chatId, messageId, defaultType)
+                    showOrEditMapsMenu(chatId, messageId, isTextMessage, defaultType)
                 }
                 "map" -> {
                     val mapId = parts.getOrNull(2) ?: return@onMessageDataCallbackQuery
                     val map = NadeMap.fromString(mapId) ?: return@onMessageDataCallbackQuery
-                    editToTypesMenu(chatId, messageId, map)
+                    showOrEditTypesMenu(chatId, messageId, isTextMessage, map)
                 }
                 "type" -> {
                     val mapId = parts.getOrNull(2) ?: return@onMessageDataCallbackQuery
                     val typeId = parts.getOrNull(3) ?: return@onMessageDataCallbackQuery
                     val map = NadeMap.fromString(mapId) ?: return@onMessageDataCallbackQuery
                     val type = NadeType.fromString(typeId) ?: return@onMessageDataCallbackQuery
-                    editToNadesList(chatId, messageId, map, type)
+                    showOrEditNadesList(chatId, messageId, isTextMessage, map, type)
                 }
                 "show" -> {
                     val nadeId = parts.getOrNull(2) ?: return@onMessageDataCallbackQuery
@@ -153,9 +138,21 @@ class NadeHandler(
         notificationService.sendMessage(chatId, text, markup)
     }
 
-    private suspend fun editToMapsMenu(chatId: Long, messageId: Long, defaultType: NadeType? = null) {
+    private suspend fun showOrEditMapsMenu(
+        chatId: Long,
+        messageId: Long,
+        isTextMessage: Boolean,
+        defaultType: NadeType? = null
+    ) {
         val (text, markup) = buildMapsMenu(defaultType)
-        notificationService.editMessage(chatId, messageId, text, markup)
+        if (isTextMessage) {
+            val edited = notificationService.editMessage(chatId, messageId, text, markup)
+            if (!edited) {
+                notificationService.sendMessage(chatId, text, markup)
+            }
+        } else {
+            notificationService.sendMessage(chatId, text, markup)
+        }
     }
 
     private fun buildMapsMenu(defaultType: NadeType?): Pair<String, InlineKeyboardMarkup> {
@@ -179,9 +176,21 @@ class NadeHandler(
         notificationService.sendMessage(chatId, text, markup)
     }
 
-    private suspend fun editToTypesMenu(chatId: Long, messageId: Long, map: NadeMap) {
+    private suspend fun showOrEditTypesMenu(
+        chatId: Long,
+        messageId: Long,
+        isTextMessage: Boolean,
+        map: NadeMap
+    ) {
         val (text, markup) = buildTypesMenu(map)
-        notificationService.editMessage(chatId, messageId, text, markup)
+        if (isTextMessage) {
+            val edited = notificationService.editMessage(chatId, messageId, text, markup)
+            if (!edited) {
+                notificationService.sendMessage(chatId, text, markup)
+            }
+        } else {
+            notificationService.sendMessage(chatId, text, markup)
+        }
     }
 
     private fun buildTypesMenu(map: NadeMap): Pair<String, InlineKeyboardMarkup> {
@@ -218,9 +227,22 @@ class NadeHandler(
         notificationService.sendMessage(chatId, text, markup)
     }
 
-    private suspend fun editToNadesList(chatId: Long, messageId: Long, map: NadeMap, type: NadeType) {
+    private suspend fun showOrEditNadesList(
+        chatId: Long,
+        messageId: Long,
+        isTextMessage: Boolean,
+        map: NadeMap,
+        type: NadeType
+    ) {
         val (text, markup) = buildNadesList(map, type)
-        notificationService.editMessage(chatId, messageId, text, markup)
+        if (isTextMessage) {
+            val edited = notificationService.editMessage(chatId, messageId, text, markup)
+            if (!edited) {
+                notificationService.sendMessage(chatId, text, markup)
+            }
+        } else {
+            notificationService.sendMessage(chatId, text, markup)
+        }
     }
 
     private fun buildNadesList(map: NadeMap, type: NadeType): Pair<String, InlineKeyboardMarkup> {
