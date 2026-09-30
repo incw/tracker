@@ -4,7 +4,6 @@ import dev.inmo.tgbotapi.bot.TelegramBot
 import dev.inmo.tgbotapi.extensions.api.edit.text.editMessageText
 import dev.inmo.tgbotapi.extensions.api.send.sendTextMessage
 import dev.inmo.tgbotapi.extensions.api.send.media.sendSticker
-import dev.inmo.tgbotapi.extensions.api.send.media.sendAnimation
 import dev.inmo.tgbotapi.extensions.api.send.setMessageReaction
 import dev.inmo.tgbotapi.types.ChatId
 import dev.inmo.tgbotapi.types.LinkPreviewOptions
@@ -91,34 +90,6 @@ class NotificationService(
             true
         }.onFailure {
             logger.error("Failed to send sticker to chat {}: {}", chatId, it.message)
-        }.getOrDefault(false)
-    }
-
-    suspend fun sendAnimation(
-        chatId: Long,
-        videoUrl: String,
-        caption: String,
-        replyMarkup: InlineKeyboardMarkup? = null,
-        replyToMessageId: Long? = null
-    ): Boolean {
-        val currentBot = bot ?: run {
-            logger.warn("Telegram bot instance is not initialized, cannot send animation to {}", chatId)
-            return false
-        }
-        val targetChatId = ChatId(RawChatId(chatId))
-        val replyParams = buildReplyParameters(targetChatId, replyToMessageId, null)
-        return runCatching {
-            currentBot.sendAnimation(
-                chatId = targetChatId,
-                animation = dev.inmo.tgbotapi.requests.abstracts.InputFile.fromUrl(videoUrl),
-                text = caption,
-                parseMode = HTMLParseMode,
-                replyMarkup = replyMarkup,
-                replyParameters = replyParams
-            )
-            true
-        }.onFailure {
-            logger.error("Failed to send animation to chat {}: {}", chatId, it.message)
         }.getOrDefault(false)
     }
 

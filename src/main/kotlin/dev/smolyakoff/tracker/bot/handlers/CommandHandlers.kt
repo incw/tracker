@@ -8,7 +8,6 @@ import dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository
 import dev.smolyakoff.tracker.db.EloRepository
 import dev.smolyakoff.tracker.db.MatchRepository
 import dev.smolyakoff.tracker.db.PlayerRepository
-import dev.smolyakoff.tracker.nades.NadeHandler
 import dev.smolyakoff.tracker.service.WordReactionService
 
 /**
@@ -17,7 +16,6 @@ import dev.smolyakoff.tracker.service.WordReactionService
  *  - [StatsHandler]        : /stats, /top (per-chat)
  *  - [SubscriptionHandler] : /start, /help, /subscribe, /unsubscribe, /status, chat member events
  *  - [WordReactionHandler] : /word, /words, auto-response matching
- *  - [NadeHandler]         : /nades, /smoke, /flash, /molotov (CS2 lineup guide)
  */
 class CommandHandlers(
     private val faceitApiClient: FaceitApiClient,
@@ -58,15 +56,10 @@ class CommandHandlers(
         notificationService = notificationService
     )
 
-    private val nadeHandler = NadeHandler(
-        notificationService = notificationService
-    )
-
     suspend fun register(context: BehaviourContext) {
         subscriptionHandler.register(context)
         trackHandler.register(context)
         statsHandler.register(context)
         wordReactionHandler.register(context)
-        nadeHandler.register(context)
     }
 }
