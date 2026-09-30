@@ -69,20 +69,23 @@ class WordReactionHandler(
         }
 
         val messageId = message.messageId.long
+        val quote = WordReactionService.findMatchingQuote(message.content.text, reaction.trigger)?.take(1024)
 
         when (reaction.responseType) {
             ReactionType.TEXT -> {
                 notificationService.sendMessage(
                     chatId = chatId,
                     text = reaction.responseContent,
-                    replyToMessageId = messageId
+                    replyToMessageId = messageId,
+                    quote = quote
                 )
             }
             ReactionType.STICKER -> {
                 notificationService.sendSticker(
                     chatId = chatId,
                     fileId = reaction.responseContent,
-                    replyToMessageId = messageId
+                    replyToMessageId = messageId,
+                    quote = quote
                 )
             }
             ReactionType.EMOJI -> {

@@ -37,6 +37,18 @@ class WordReactionServiceTest {
     }
 
     @Test
+    fun `test findMatchingQuote preserves exact casing and boundaries`() {
+        assertEquals("симиль", WordReactionService.findMatchingQuote("эй симиль!", "симиль"))
+        assertEquals("СИМИЛЬ", WordReactionService.findMatchingQuote("Ну что, СИМИЛЬ?", "симиль"))
+        assertEquals("СиМиЛь", WordReactionService.findMatchingQuote("слово: (СиМиЛь)", "симиль"))
+        assertEquals("СИМИЛЬ МЯСО", WordReactionService.findMatchingQuote("Привет, СИМИЛЬ МЯСО тут", "симиль мясо"))
+
+        // False positives return null
+        assertNull(WordReactionService.findMatchingQuote("ассимиляция", "симиль"))
+        assertNull(WordReactionService.findMatchingQuote("симилька", "симиль"))
+    }
+
+    @Test
     fun `test emoji detection`() {
         assertTrue(WordReactionService.isSingleEmoji("🔥"))
         assertTrue(WordReactionService.isSingleEmoji("👍"))

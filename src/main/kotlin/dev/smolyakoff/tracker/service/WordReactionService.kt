@@ -126,6 +126,17 @@ class WordReactionService(
         }
 
         /**
+         * Extracts the exact substring matching the trigger from text with original casing,
+         * preserving Unicode word boundaries for Telegram quote reply.
+         */
+        fun findMatchingQuote(text: String, trigger: String): String? {
+            val escaped = Regex.escape(trigger.trim())
+            val regex = Regex("(^|[^\\p{L}\\p{N}_])($escaped)($|[^\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
+            val match = regex.find(text) ?: return null
+            return match.groups[2]?.value
+        }
+
+        /**
          * Checks if the given string consists of a single emoji (or Telegram reaction emoji).
          */
         fun isSingleEmoji(text: String): Boolean {

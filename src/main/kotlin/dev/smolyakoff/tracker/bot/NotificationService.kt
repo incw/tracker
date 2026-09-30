@@ -45,14 +45,15 @@ class NotificationService(
         chatId: Long,
         text: String,
         replyMarkup: InlineKeyboardMarkup? = null,
-        replyToMessageId: Long? = null
+        replyToMessageId: Long? = null,
+        quote: String? = null
     ): Boolean {
         val currentBot = bot ?: run {
             logger.warn("Telegram bot instance is not initialized, cannot send message to {}", chatId)
             return false
         }
         val targetChatId = ChatId(RawChatId(chatId))
-        val replyParams = replyToMessageId?.let { ReplyParameters(targetChatId, MessageId(it)) }
+        val replyParams = buildReplyParameters(targetChatId, replyToMessageId, quote)
         return runCatching {
             currentBot.sendTextMessage(
                 chatId = targetChatId,
@@ -71,14 +72,15 @@ class NotificationService(
     suspend fun sendSticker(
         chatId: Long,
         fileId: String,
-        replyToMessageId: Long? = null
+        replyToMessageId: Long? = null,
+        quote: String? = null
     ): Boolean {
         val currentBot = bot ?: run {
             logger.warn("Telegram bot instance is not initialized, cannot send sticker to {}", chatId)
             return false
         }
         val targetChatId = ChatId(RawChatId(chatId))
-        val replyParams = replyToMessageId?.let { ReplyParameters(targetChatId, MessageId(it)) }
+        val replyParams = buildReplyParameters(targetChatId, replyToMessageId, quote)
         return runCatching {
             currentBot.sendSticker(
                 chatId = targetChatId,
@@ -89,6 +91,25 @@ class NotificationService(
         }.onFailure {
             logger.error("Failed to send sticker to chat {}: {}", chatId, it.message)
         }.getOrDefault(false)
+    }
+
+    private fun buildReplyParameters(targetChatId: ChatId, replyToMessageId: Long?, quote: String?): ReplyParameters? {
+        val id = replyToMessageId ?: return null
+        return if (quote != null) {
+            ReplyParameters(
+                chatIdentifier = targetChatId,
+                messageId = MessageId(id),
+                quote = quote,
+                quoteParseMode = HTMLParseMode,
+                allowSendingWithoutReply = true
+            )
+        } else {
+            ReplyParameters(
+                chatIdentifier = targetChatId,
+                messageId = MessageId(id),
+                allowSendingWithoutReply = true
+            )
+        }
     }
 
     suspend fun setMessageReaction(
