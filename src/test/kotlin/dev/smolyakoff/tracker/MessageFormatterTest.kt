@@ -322,4 +322,82 @@ class MessageFormatterTest {
         org.junit.jupiter.api.Assertions.assertEquals("Mirage", best?.label)
         org.junit.jupiter.api.Assertions.assertEquals("Vertigo", worst?.label)
     }
+
+    @Test
+    fun testFormatMatchStartSinglePlayer() {
+        val player = MessageFormatter.PlayerStartInfo(
+            nickname = "simil",
+            elo = 2340,
+            skillLevel = 10
+        )
+        val text = MessageFormatter.formatMatchStart(
+            players = listOf(player),
+            mapName = "de_mirage",
+            matchId = "match-123"
+        )
+
+        assertTrue(text.contains("Катка началась, через 45 минут ждём обсёр от <b>simil</b>!"))
+        assertTrue(text.contains("Карта: <b>Mirage</b>"))
+        assertTrue(text.contains("simil</b> (2340 Elo)"))
+        assertTrue(text.contains("https://www.faceit.com/ru/cs2/room/match-123"))
+    }
+
+    @Test
+    fun testFormatMatchStartParty() {
+        val p1 = MessageFormatter.PlayerStartInfo("simil", 2340, 10)
+        val p2 = MessageFormatter.PlayerStartInfo("s1mple", 3100, 10)
+
+        val text = MessageFormatter.formatMatchStart(
+            players = listOf(p1, p2),
+            mapName = null,
+            matchId = "match-456"
+        )
+
+        assertTrue(text.contains("Катка началась, через 45 минут ждём обсёр от <b>simil</b> и <b>s1mple</b>!"))
+        assertTrue(text.contains("Карта: <b>Идёт пик-бан...</b>"))
+        assertTrue(text.contains("https://www.faceit.com/ru/cs2/room/match-456"))
+    }
+
+    @Test
+    fun testFormatMatchDodgeTrackedPlayer() {
+        val text = MessageFormatter.formatMatchDodge(
+            dodgerNickname = "simil",
+            isTrackedPlayer = true,
+            trackedNicknames = listOf("simil"),
+            matchId = "match-dodge-1"
+        )
+
+        assertTrue(text.contains("Матч отменён (Додж)!"))
+        assertTrue(text.contains("У <b>simil</b> затряслись ножки и не зашёл! 🦵🥶"))
+        assertTrue(text.contains("https://www.faceit.com/ru/cs2/room/match-dodge-1"))
+    }
+
+    @Test
+    fun testFormatMatchDodgeOtherPlayer() {
+        val text = MessageFormatter.formatMatchDodge(
+            dodgerNickname = "toxic_random",
+            isTrackedPlayer = false,
+            trackedNicknames = listOf("simil", "s1mple"),
+            matchId = "match-dodge-2"
+        )
+
+        assertTrue(text.contains("Матч отменён (Додж)!"))
+        assertTrue(text.contains("У <b>toxic_random</b> затряслись ножки и не зашёл! 🦵🥶"))
+        assertTrue(text.contains("<b>simil</b>, <b>s1mple</b> были готовы разваливать"))
+        assertTrue(text.contains("https://www.faceit.com/ru/cs2/room/match-dodge-2"))
+    }
+
+    @Test
+    fun testFormatMatchDodgeFallback() {
+        val text = MessageFormatter.formatMatchDodge(
+            dodgerNickname = null,
+            isTrackedPlayer = false,
+            trackedNicknames = listOf("simil"),
+            matchId = "match-dodge-3"
+        )
+
+        assertTrue(text.contains("Матч отменён (Додж)!"))
+        assertTrue(text.contains("У <b>simil</b> затряслись ножки и не зашёл! 🦵🥶"))
+    }
 }
+

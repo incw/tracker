@@ -43,7 +43,8 @@ object DatabaseFactory {
                 EloSnapshotsTable,
                 ChatTrackedPlayersTable,
                 WordReactionsTable,
-                ChatSettingsTable
+                ChatSettingsTable,
+                ActiveMatchesTable
             )
         }
         logger.info("Database schema initialized successfully.")

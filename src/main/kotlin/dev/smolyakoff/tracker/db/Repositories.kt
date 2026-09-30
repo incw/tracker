@@ -3,6 +3,7 @@ package dev.smolyakoff.tracker.db
 import dev.smolyakoff.tracker.db.DatabaseFactory.dbQuery
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 
 class PlayerRepository {
     suspend fun getAll(): List<TrackedPlayer> = dbQuery {
@@ -445,3 +446,87 @@ class ChatSettingsRepository {
         }
     }
 }
+
+data class ActiveMatchRecord(
+    val matchId: String,
+    val chatId: Long,
+    val playerIds: List<String>,
+    val playerNicknames: List<String>,
+    val status: String,
+    val startedAt: Long = 0L,
+    val notifiedStart: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+class ActiveMatchRepository {
+    suspend fun saveOrUpdate(record: ActiveMatchRecord) = dbQuery {
+        val existing = ActiveMatchesTable.selectAll()
+            .where { (ActiveMatchesTable.matchId eq record.matchId) and (ActiveMatchesTable.chatId eq record.chatId) }
+            .singleOrNull()
+
+        if (existing != null) {
+            ActiveMatchesTable.update({ (ActiveMatchesTable.matchId eq record.matchId) and (ActiveMatchesTable.chatId eq record.chatId) }) {
+                it[playerIds] = record.playerIds.joinToString(",")
+                it[playerNicknames] = record.playerNicknames.joinToString(",")
+                it[status] = record.status
+                it[startedAt] = record.startedAt
+                it[notifiedStart] = record.notifiedStart
+            }
+        } else {
+            ActiveMatchesTable.insert {
+                it[matchId] = record.matchId
+                it[chatId] = record.chatId
+                it[playerIds] = record.playerIds.joinToString(",")
+                it[playerNicknames] = record.playerNicknames.joinToString(",")
+                it[status] = record.status
+                it[startedAt] = record.startedAt
+                it[notifiedStart] = record.notifiedStart
+                it[createdAt] = record.createdAt
+            }
+        }
+    }
+
+    suspend fun getActiveMatches(): List<ActiveMatchRecord> = dbQuery {
+        ActiveMatchesTable.selectAll()
+            .map { rowToRecord(it) }
+    }
+
+    suspend fun getActiveMatchesForMatch(matchId: String): List<ActiveMatchRecord> = dbQuery {
+        ActiveMatchesTable.selectAll()
+            .where { ActiveMatchesTable.matchId eq matchId }
+            .map { rowToRecord(it) }
+    }
+
+    suspend fun isStartNotified(matchId: String, chatId: Long): Boolean = dbQuery {
+        ActiveMatchesTable.selectAll()
+            .where { (ActiveMatchesTable.matchId eq matchId) and (ActiveMatchesTable.chatId eq chatId) }
+            .singleOrNull()
+            ?.get(ActiveMatchesTable.notifiedStart) ?: false
+    }
+
+    suspend fun deleteForMatch(matchId: String): Boolean = dbQuery {
+        ActiveMatchesTable.deleteWhere { ActiveMatchesTable.matchId eq matchId } > 0
+    }
+
+    suspend fun delete(matchId: String, chatId: Long): Boolean = dbQuery {
+        ActiveMatchesTable.deleteWhere {
+            (ActiveMatchesTable.matchId eq matchId) and (ActiveMatchesTable.chatId eq chatId)
+        } > 0
+    }
+
+    suspend fun deleteOlderThan(cutoffMillis: Long): Int = dbQuery {
+        ActiveMatchesTable.deleteWhere { ActiveMatchesTable.createdAt less cutoffMillis }
+    }
+
+    private fun rowToRecord(row: ResultRow) = ActiveMatchRecord(
+        matchId = row[ActiveMatchesTable.matchId],
+        chatId = row[ActiveMatchesTable.chatId],
+        playerIds = row[ActiveMatchesTable.playerIds].split(",").map { it.trim() }.filter { it.isNotEmpty() },
+        playerNicknames = row[ActiveMatchesTable.playerNicknames].split(",").map { it.trim() }.filter { it.isNotEmpty() },
+        status = row[ActiveMatchesTable.status],
+        startedAt = row[ActiveMatchesTable.startedAt],
+        notifiedStart = row[ActiveMatchesTable.notifiedStart],
+        createdAt = row[ActiveMatchesTable.createdAt]
+    )
+}
+

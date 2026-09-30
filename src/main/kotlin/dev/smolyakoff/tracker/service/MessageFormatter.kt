@@ -245,7 +245,6 @@ object MessageFormatter {
         appendLine("/word <code>[слово1, ...] reacted by &lt;ответ&gt;</code> — реакция на слова (текст/стикер/эмодзи)")
         appendLine("/word del <code>[слово1, ...]</code> — удалить реакции на слова")
         appendLine("/words — список настроенных реакций на слова")
-        appendLine("/settings <code>[reactions] allowed .all|.admin</code> — права на настройку бота")
         appendLine("/unsubscribe — отключить уведомления в этом чате")
         appendLine("/help — это меню")
         appendLine()
@@ -253,5 +252,73 @@ object MessageFormatter {
         appendLine("• <b>High impact</b> — лучший K/D в команде (1-е место)")
         appendLine("• <b>пойдётская</b> — обычная игра (2-е, 3-е, 4-е место)")
         appendLine("• <b>мясо / мусор / клоун</b> — худший результат в команде (5-е место)")
+    }
+
+    data class PlayerStartInfo(
+        val nickname: String,
+        val elo: Int? = null,
+        val skillLevel: Int? = null
+    )
+
+    fun formatMatchStart(
+        players: List<PlayerStartInfo>,
+        mapName: String?,
+        matchId: String
+    ): String = buildString {
+        val nicknamesList = players.map { it.nickname }
+        val namesStr = if (nicknamesList.size > 1) {
+            nicknamesList.dropLast(1).joinToString(", ") { "<b>${it.escapeHtml()}</b>" } +
+                    " и <b>${nicknamesList.last().escapeHtml()}</b>"
+        } else {
+            "<b>${nicknamesList.firstOrNull()?.escapeHtml()}</b>"
+        }
+
+        appendLine("⚔️ <b>Катка началась, через 45 минут ждём обсёр от $namesStr!</b>")
+        appendLine("─────────────────────")
+        val mapDisplay = if (!mapName.isNullOrBlank()) {
+            mapName.removePrefix("de_").replaceFirstChar { it.uppercase() }.escapeHtml()
+        } else {
+            "Идёт пик-бан..."
+        }
+        appendLine("🗺️ Карта: <b>$mapDisplay</b>")
+
+        val playersDesc = players.joinToString(", ") { p ->
+            val eloPart = p.elo?.let { " ($it Elo)" } ?: ""
+            "<b>${p.nickname.escapeHtml()}</b>$eloPart"
+        }
+        appendLine("👥 Состав: $playersDesc")
+        appendLine()
+        appendLine("<a href=\"https://www.faceit.com/ru/cs2/room/${matchId}\">🔗 Комната матча на FACEIT</a>")
+    }
+
+    fun formatMatchDodge(
+        dodgerNickname: String?,
+        isTrackedPlayer: Boolean,
+        trackedNicknames: List<String>,
+        matchId: String
+    ): String = buildString {
+        appendLine("🏃‍♂️💨 <b>Матч отменён (Додж)!</b>")
+        appendLine("─────────────────────")
+
+        val targetName = dodgerNickname?.ifBlank { null }
+            ?: trackedNicknames.firstOrNull()
+            ?: "кого-то"
+
+        if (isTrackedPlayer) {
+            appendLine("Сервер так и не дождался бойцов.")
+            appendLine("У <b>${targetName.escapeHtml()}</b> затряслись ножки и не зашёл! 🦵🥶")
+        } else if (!dodgerNickname.isNullOrBlank()) {
+            appendLine("Кто-то испугался и не зашёл на сервер.")
+            appendLine("У <b>${dodgerNickname.escapeHtml()}</b> затряслись ножки и не зашёл! 🦵🥶")
+            if (trackedNicknames.isNotEmpty()) {
+                val trackedStr = trackedNicknames.joinToString(", ") { "<b>${it.escapeHtml()}</b>" }
+                appendLine("<i>$trackedStr были готовы разваливать, но увы.</i>")
+            }
+        } else {
+            appendLine("Сервер закрыт, кто-то не подключился.")
+            appendLine("У <b>${targetName.escapeHtml()}</b> затряслись ножки и не зашёл! 🦵🥶")
+        }
+        appendLine()
+        appendLine("<a href=\"https://www.faceit.com/ru/cs2/room/${matchId}\">🔗 Комната матча на FACEIT</a>")
     }
 }

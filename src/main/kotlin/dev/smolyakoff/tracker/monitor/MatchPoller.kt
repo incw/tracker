@@ -3,9 +3,14 @@ package dev.smolyakoff.tracker.monitor
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardButtons.URLInlineKeyboardButton
 import dev.inmo.tgbotapi.types.buttons.InlineKeyboardMarkup
 import dev.smolyakoff.tracker.api.FaceitApiClient
+import dev.smolyakoff.tracker.api.model.FaceitMatchDetailsResponse
 import dev.smolyakoff.tracker.api.model.MatchPlayer
 import dev.smolyakoff.tracker.api.model.MatchRound
+import dev.smolyakoff.tracker.api.model.PlayerBanItem
 import dev.smolyakoff.tracker.bot.NotificationService
+import dev.smolyakoff.tracker.db.ActiveMatchRecord
+import dev.smolyakoff.tracker.db.ActiveMatchRepository
+import dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository
 import dev.smolyakoff.tracker.db.MatchRecord
 import dev.smolyakoff.tracker.db.MatchRepository
 import dev.smolyakoff.tracker.db.PlayerRepository
@@ -27,10 +32,11 @@ class MatchPoller(
     private val scope: CoroutineScope,
     private val faceitApiClient: FaceitApiClient,
     private val playerRepository: PlayerRepository,
-    private val chatTrackedPlayerRepository: dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository,
+    private val chatTrackedPlayerRepository: ChatTrackedPlayerRepository,
     private val matchRepository: MatchRepository,
     private val eloTracker: EloTracker,
     private val notificationService: NotificationService,
+    private val activeMatchRepository: ActiveMatchRepository,
     private val pollIntervalSeconds: Long = 45L
 ) {
     private val logger = LoggerFactory.getLogger(MatchPoller::class.java)
@@ -75,7 +81,16 @@ class MatchPoller(
             return
         }
 
-        // Parallel fetch player histories with rate limiter safety
+        // Clean up stale active matches older than 24h
+        runCatching {
+            val cutoff = System.currentTimeMillis() - 24 * 3600 * 1000L
+            activeMatchRepository.deleteOlderThan(cutoff)
+        }
+
+        // 1. Check known active matches for cancellations
+        checkActiveMatches()
+
+        // 2. Parallel fetch player histories with rate limiter safety
         val playerHistories = coroutineScope {
             trackedPlayers.map { player ->
                 async {
@@ -84,31 +99,210 @@ class MatchPoller(
             }.awaitAll()
         }
 
-        val pendingMatches = mutableMapOf<String, MutableList<PendingMatchPlayer>>()
+        val pendingFinishedMatches = mutableMapOf<String, MutableList<PendingMatchPlayer>>()
+        val ongoingMatches = mutableMapOf<String, MutableList<TrackedPlayer>>()
 
         for ((player, history) in playerHistories) {
             for (item in history) {
                 val status = item.status.uppercase()
-                if (status == "FINISHED") {
-                    val finishedAtMillis = if (item.finishedAt > 0L) item.finishedAt * 1000L else System.currentTimeMillis()
-                    if (player.trackedSince > 0L && finishedAtMillis < player.trackedSince) {
-                        continue
+                when (status) {
+                    "FINISHED" -> {
+                        val finishedAtMillis = if (item.finishedAt > 0L) item.finishedAt * 1000L else System.currentTimeMillis()
+                        if (player.trackedSince > 0L && finishedAtMillis < player.trackedSince) {
+                            continue
+                        }
+                        val alreadyRecorded = matchRepository.isMatchRecorded(item.matchId, player.faceitId)
+                        if (!alreadyRecorded) {
+                            pendingFinishedMatches.getOrPut(item.matchId) { mutableListOf() }
+                                .add(PendingMatchPlayer(player, item.finishedAt))
+                        }
                     }
-                    val alreadyRecorded = matchRepository.isMatchRecorded(item.matchId, player.faceitId)
-                    if (!alreadyRecorded) {
-                        pendingMatches.getOrPut(item.matchId) { mutableListOf() }
-                            .add(PendingMatchPlayer(player, item.finishedAt))
+                    "CONFIGURING", "READY", "ONGOING" -> {
+                        ongoingMatches.getOrPut(item.matchId) { mutableListOf() }.add(player)
                     }
                 }
             }
         }
 
-        if (pendingMatches.isEmpty()) return
-
-        logger.info("Found {} pending finished matches to process", pendingMatches.size)
-        for ((matchId, pendingPlayers) in pendingMatches) {
-            processMatch(matchId, pendingPlayers)
+        // 3. Process newly discovered ongoing / configuring matches (Start Notification)
+        for ((matchId, playersInMatch) in ongoingMatches) {
+            handleOngoingMatch(matchId, playersInMatch)
         }
+
+        // 4. Process finished matches (Finished Card)
+        if (pendingFinishedMatches.isNotEmpty()) {
+            logger.info("Found {} pending finished matches to process", pendingFinishedMatches.size)
+            for ((matchId, pendingPlayers) in pendingFinishedMatches) {
+                processMatch(matchId, pendingPlayers)
+            }
+        }
+    }
+
+    private suspend fun handleOngoingMatch(matchId: String, playersInMatch: List<TrackedPlayer>) {
+        val playerIds = playersInMatch.map { it.faceitId }
+        val chatPlayersMap = chatTrackedPlayerRepository.getChatIdsForPlayers(playerIds)
+
+        var matchDetails: FaceitMatchDetailsResponse? = null
+
+        for ((chatId, trackedPlayerIdsInChat) in chatPlayersMap) {
+            val isNotified = activeMatchRepository.isStartNotified(matchId, chatId)
+            if (isNotified) continue
+
+            if (matchDetails == null) {
+                matchDetails = faceitApiClient.getMatchDetails(matchId)
+            }
+
+            val playersInChat = trackedPlayerIdsInChat.mapNotNull { fId ->
+                playersInMatch.firstOrNull { it.faceitId == fId }
+            }
+            if (playersInChat.isEmpty()) continue
+
+            val startPlayers = playersInChat.map { p ->
+                MessageFormatter.PlayerStartInfo(
+                    nickname = p.nickname,
+                    elo = p.currentElo,
+                    skillLevel = p.skillLevel
+                )
+            }
+
+            val startMsg = MessageFormatter.formatMatchStart(
+                players = startPlayers,
+                mapName = matchDetails?.pickedMap,
+                matchId = matchId
+            )
+
+            val matchUrl = "https://www.faceit.com/ru/cs2/room/$matchId"
+            val markup = InlineKeyboardMarkup(
+                keyboard = listOf(
+                    listOf(
+                        URLInlineKeyboardButton(
+                            text = "🔗 Комната матча",
+                            url = matchUrl
+                        )
+                    )
+                )
+            )
+
+            notificationService.sendMessage(chatId, startMsg, markup)
+
+            activeMatchRepository.saveOrUpdate(
+                ActiveMatchRecord(
+                    matchId = matchId,
+                    chatId = chatId,
+                    playerIds = playersInChat.map { it.faceitId },
+                    playerNicknames = playersInChat.map { it.nickname },
+                    status = matchDetails?.status?.ifBlank { "ONGOING" } ?: "ONGOING",
+                    startedAt = matchDetails?.startedAt ?: (System.currentTimeMillis() / 1000L),
+                    notifiedStart = true
+                )
+            )
+            logger.info("Sent match start notification for match {} to chat {}", matchId, chatId)
+        }
+    }
+
+    private suspend fun checkActiveMatches() {
+        val activeMatches = activeMatchRepository.getActiveMatches()
+        if (activeMatches.isEmpty()) return
+
+        val groupedByMatch = activeMatches.groupBy { it.matchId }
+
+        for ((matchId, records) in groupedByMatch) {
+            val details = faceitApiClient.getMatchDetails(matchId) ?: continue
+            val status = details.status.uppercase()
+
+            if (status == "CANCELLED") {
+                logger.info("Match {} is CANCELLED, finding dodger...", matchId)
+                val dodgerResult = findDodger(matchId, details, records)
+
+                val matchUrl = "https://www.faceit.com/ru/cs2/room/$matchId"
+                val markup = InlineKeyboardMarkup(
+                    keyboard = listOf(
+                        listOf(
+                            URLInlineKeyboardButton(
+                                text = "🔗 Комната матча",
+                                url = matchUrl
+                            )
+                        )
+                    )
+                )
+
+                for (rec in records) {
+                    val dodgeMsg = MessageFormatter.formatMatchDodge(
+                        dodgerNickname = dodgerResult.nickname,
+                        isTrackedPlayer = dodgerResult.isTrackedPlayer,
+                        trackedNicknames = rec.playerNicknames,
+                        matchId = matchId
+                    )
+                    notificationService.sendMessage(rec.chatId, dodgeMsg, markup)
+                    logger.info("Sent dodge notification for match {} to chat {}", matchId, rec.chatId)
+                }
+
+                activeMatchRepository.deleteForMatch(matchId)
+            } else if (status == "FINISHED") {
+                val allTrackedPlayerIds = records.flatMap { it.playerIds }.distinct()
+                val allRecorded = allTrackedPlayerIds.all { matchRepository.isMatchRecorded(matchId, it) }
+                if (allRecorded) {
+                    activeMatchRepository.deleteForMatch(matchId)
+                }
+            }
+        }
+    }
+
+    private data class DodgerResult(
+        val nickname: String?,
+        val isTrackedPlayer: Boolean
+    )
+
+    private suspend fun findDodger(
+        matchId: String,
+        details: FaceitMatchDetailsResponse,
+        records: List<ActiveMatchRecord>
+    ): DodgerResult {
+        val trackedPlayerIds = records.flatMap { it.playerIds }.toSet()
+        val nowSec = System.currentTimeMillis() / 1000L
+
+        // 1. Check tracked players first
+        for (fId in trackedPlayerIds) {
+            val bans = faceitApiClient.getPlayerBans(fId, limit = 2)
+            val dodgerBan = bans.firstOrNull { isRecentAfkBan(it, nowSec) }
+            if (dodgerBan != null) {
+                val nick = dodgerBan.nickname.ifBlank {
+                    records.flatMap { it.playerNicknames }.firstOrNull() ?: fId
+                }
+                logger.info("Dodger identified as tracked player: {} in match {}", nick, matchId)
+                return DodgerResult(nickname = nick, isTrackedPlayer = true)
+            }
+        }
+
+        // 2. Check other lobby players from teams
+        val allLobbyPlayers = details.teams?.allPlayers ?: emptyList()
+        val otherPlayers = allLobbyPlayers.filter { it.playerId !in trackedPlayerIds }
+
+        if (otherPlayers.isNotEmpty()) {
+            val dodgerFromLobby = coroutineScope {
+                otherPlayers.map { p ->
+                    async {
+                        val bans = faceitApiClient.getPlayerBans(p.playerId, limit = 2)
+                        val hasBan = bans.any { isRecentAfkBan(it, nowSec) }
+                        if (hasBan) p.nickname.ifBlank { "игрок лобби" } else null
+                    }
+                }.awaitAll().filterNotNull().firstOrNull()
+            }
+
+            if (dodgerFromLobby != null) {
+                logger.info("Dodger identified as lobby player: {} in match {}", dodgerFromLobby, matchId)
+                return DodgerResult(nickname = dodgerFromLobby, isTrackedPlayer = false)
+            }
+        }
+
+        // 3. Fallback: no specific ban found
+        logger.info("No explicit ban found for match {}, fallback to tracked nickname", matchId)
+        return DodgerResult(nickname = null, isTrackedPlayer = false)
+    }
+
+    private fun isRecentAfkBan(ban: PlayerBanItem, nowSec: Long): Boolean {
+        val isTimingMatch = ban.endsAt > nowSec || (ban.startsAt > 0L && ban.startsAt > (nowSec - 1200L))
+        return isTimingMatch && (ban.isAfkOrDodge || ban.type.isNotBlank())
     }
 
     private suspend fun processMatch(matchId: String, pendingPlayers: List<PendingMatchPlayer>) {
@@ -175,6 +369,7 @@ class MatchPoller(
                 }
             }
         }
+        activeMatchRepository.deleteForMatch(matchId)
     }
 
     private suspend fun evaluatePlayerPerformance(
