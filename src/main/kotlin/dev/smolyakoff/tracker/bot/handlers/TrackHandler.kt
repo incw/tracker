@@ -22,6 +22,7 @@ class TrackHandler(
     private val matchRepository: MatchRepository,
     private val eloRepository: EloRepository,
     private val chatRepository: ChatRepository,
+    private val chatTrackedPlayerRepository: dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository,
     private val notificationService: NotificationService
 ) {
     private val ChatMessage.chatId: Long get() = chat.id.chatId.long
@@ -63,30 +64,45 @@ class TrackHandler(
                     return@onCommandWithArgs
                 }
                 bootstrapPlayer(playerResp)
-                notificationService.sendMessage(
-                    message.chatId,
-                    "✅ Игрок <b>${playerResp.nickname.escapeHtml()}</b> успешно добавлен в трекинг!\n" +
+                val isNew = chatTrackedPlayerRepository.linkPlayer(message.chatId, playerResp.playerId)
+                val reply = if (isNew) {
+                    "✅ Игрок <b>${playerResp.nickname.escapeHtml()}</b> успешно добавлен в трекинг для этого чата!\n" +
                             "⭐️ Уровень: <b>${playerResp.skillLevel}</b> | 🏆 Elo: <b>${playerResp.elo}</b>"
-                )
+                } else {
+                    "ℹ️ Игрок <b>${playerResp.nickname.escapeHtml()}</b> уже отслеживается в этом чате.\n" +
+                            "⭐️ Уровень: <b>${playerResp.skillLevel}</b> | 🏆 Elo: <b>${playerResp.elo}</b>"
+                }
+                notificationService.sendMessage(message.chatId, reply)
             } else {
                 notificationService.sendMessage(
                     message.chatId,
                     "🔍 Ищу игроков: ${nicknames.joinToString(", ") { "<b>${it.escapeHtml()}</b>" }} на FACEIT..."
                 )
                 val added = mutableListOf<FaceitPlayerResponse>()
+                val alreadyTracked = mutableListOf<FaceitPlayerResponse>()
                 val notFound = mutableListOf<String>()
                 for (nickname in nicknames) {
                     val playerResp = faceitApiClient.getPlayerByNickname(nickname)
-                    if (playerResp != null) { bootstrapPlayer(playerResp); added.add(playerResp) }
-                    else notFound.add(nickname)
+                    if (playerResp != null) {
+                        bootstrapPlayer(playerResp)
+                        val isNew = chatTrackedPlayerRepository.linkPlayer(message.chatId, playerResp.playerId)
+                        if (isNew) added.add(playerResp) else alreadyTracked.add(playerResp)
+                    } else {
+                        notFound.add(nickname)
+                    }
                 }
                 val responseText = buildString {
                     if (added.isNotEmpty()) {
-                        appendLine("✅ <b>Успешно добавлены в трекинг:</b>")
+                        appendLine("✅ <b>Успешно добавлены в трекинг этого чата:</b>")
                         for (p in added) appendLine("• <b>${p.nickname.escapeHtml()}</b> [⭐️ Lvl ${p.skillLevel} | 🏆 Elo: ${p.elo}]")
                     }
-                    if (notFound.isNotEmpty()) {
+                    if (alreadyTracked.isNotEmpty()) {
                         if (added.isNotEmpty()) appendLine()
+                        appendLine("ℹ️ <b>Уже отслеживались в этом чате:</b>")
+                        for (p in alreadyTracked) appendLine("• <b>${p.nickname.escapeHtml()}</b> [⭐️ Lvl ${p.skillLevel} | 🏆 Elo: ${p.elo}]")
+                    }
+                    if (notFound.isNotEmpty()) {
+                        if (added.isNotEmpty() || alreadyTracked.isNotEmpty()) appendLine()
                         appendLine("❌ <b>Не найдены на FACEIT:</b>")
                         for (n in notFound) appendLine("• <b>${n.escapeHtml()}</b>")
                     }
@@ -107,24 +123,32 @@ class TrackHandler(
             }
             if (nicknames.size == 1) {
                 val nickname = nicknames.first()
-                val deleted = playerRepository.delete(nickname)
-                val reply = if (deleted) "🗑️ Игрок <b>${nickname.escapeHtml()}</b> удален из отслеживания."
-                else "⚠️ Игрок <b>${nickname.escapeHtml()}</b> не был найден в списке отслеживаемых."
+                val player = playerRepository.findByNickname(nickname)
+                val deleted = if (player != null) {
+                    chatTrackedPlayerRepository.unlinkPlayer(message.chatId, player.faceitId)
+                } else false
+
+                val reply = if (deleted) "🗑️ Игрок <b>${nickname.escapeHtml()}</b> удален из отслеживания в этом чате."
+                else "⚠️ Игрок <b>${nickname.escapeHtml()}</b> не был найден в списке отслеживаемых этого чата."
                 notificationService.sendMessage(message.chatId, reply)
             } else {
                 val deleted = mutableListOf<String>()
                 val notFound = mutableListOf<String>()
                 for (nickname in nicknames) {
-                    if (playerRepository.delete(nickname)) deleted.add(nickname) else notFound.add(nickname)
+                    val player = playerRepository.findByNickname(nickname)
+                    val wasDeleted = if (player != null) {
+                        chatTrackedPlayerRepository.unlinkPlayer(message.chatId, player.faceitId)
+                    } else false
+                    if (wasDeleted) deleted.add(nickname) else notFound.add(nickname)
                 }
                 val reply = buildString {
                     if (deleted.isNotEmpty()) {
-                        appendLine("🗑️ <b>Удалены из отслеживания:</b>")
+                        appendLine("🗑️ <b>Удалены из отслеживания в этом чате:</b>")
                         for (n in deleted) appendLine("• <b>${n.escapeHtml()}</b>")
                     }
                     if (notFound.isNotEmpty()) {
                         if (deleted.isNotEmpty()) appendLine()
-                        appendLine("⚠️ <b>Не были найдены в списке:</b>")
+                        appendLine("⚠️ <b>Не были найдены в списке отслеживаемых этого чата:</b>")
                         for (n in notFound) appendLine("• <b>${n.escapeHtml()}</b>")
                     }
                 }

@@ -22,6 +22,7 @@ import kotlinx.coroutines.coroutineScope
 class StatsHandler(
     private val faceitApiClient: FaceitApiClient,
     private val playerRepository: PlayerRepository,
+    private val chatTrackedPlayerRepository: dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository,
     private val notificationService: NotificationService
 ) {
     private val logger = LoggerFactory.getLogger(StatsHandler::class.java)
@@ -64,12 +65,12 @@ class StatsHandler(
     }
 
     private suspend fun showStatsMenuOrPlayer(chatId: Long) {
-        val tracked = playerRepository.getAll()
+        val tracked = chatTrackedPlayerRepository.getTrackedPlayersForChat(chatId)
         when {
             tracked.isEmpty() -> {
                 notificationService.sendMessage(
                     chatId,
-                    "ℹ️ Нет отслеживаемых игроков. Добавьте через <code>/track &lt;ник&gt;</code>"
+                    "ℹ️ В этом чате нет отслеживаемых игроков. Добавьте через <code>/track &lt;ник&gt;</code>"
                 )
             }
             tracked.size == 1 -> {
@@ -204,7 +205,14 @@ class StatsHandler(
     }
 
     private suspend fun showLeaderboard(chatId: Long) {
-        val players = playerRepository.getAll()
+        val players = chatTrackedPlayerRepository.getTrackedPlayersForChat(chatId)
+        if (players.isEmpty()) {
+            notificationService.sendMessage(
+                chatId,
+                "ℹ️ В этом чате нет отслеживаемых игроков. Добавьте через <code>/track &lt;ник&gt;</code>"
+            )
+            return
+        }
         notificationService.sendMessage(chatId, MessageFormatter.formatLeaderboard(players))
     }
 

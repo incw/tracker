@@ -24,8 +24,8 @@ class EloTrackerTest {
     fun setUp() {
         DatabaseFactory.init(testDbFile.absolutePath)
         transaction {
-            SchemaUtils.drop(TrackedPlayersTable, EloSnapshotsTable, MatchRecordsTable, ChatSubscriptionsTable)
-            SchemaUtils.create(TrackedPlayersTable, EloSnapshotsTable, MatchRecordsTable, ChatSubscriptionsTable)
+            SchemaUtils.drop(TrackedPlayersTable, EloSnapshotsTable, MatchRecordsTable, ChatSubscriptionsTable, ChatTrackedPlayersTable, WordReactionsTable, ChatSettingsTable)
+            SchemaUtils.create(TrackedPlayersTable, EloSnapshotsTable, MatchRecordsTable, ChatSubscriptionsTable, ChatTrackedPlayersTable, WordReactionsTable, ChatSettingsTable)
         }
     }
 

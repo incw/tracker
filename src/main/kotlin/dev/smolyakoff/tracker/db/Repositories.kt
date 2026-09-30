@@ -65,7 +65,7 @@ class PlayerRepository {
         }
     }
 
-    private fun rowToPlayer(row: ResultRow) = TrackedPlayer(
+    fun rowToPlayer(row: ResultRow) = TrackedPlayer(
         faceitId = row[TrackedPlayersTable.faceitId],
         nickname = row[TrackedPlayersTable.nickname],
         avatarUrl = row[TrackedPlayersTable.avatarUrl],
@@ -251,5 +251,195 @@ class EloRepository {
             .where { EloSnapshotsTable.playerId eq playerId }
             .singleOrNull()
             ?.getOrNull(maxExpr)
+    }
+}
+
+class ChatTrackedPlayerRepository(
+    private val playerRepository: PlayerRepository = PlayerRepository()
+) {
+    suspend fun linkPlayer(chatId: Long, playerId: String, trackedSince: Long = System.currentTimeMillis()): Boolean = dbQuery {
+        val exists = ChatTrackedPlayersTable.selectAll()
+            .where { (ChatTrackedPlayersTable.chatId eq chatId) and (ChatTrackedPlayersTable.playerId eq playerId) }
+            .count() > 0
+        if (!exists) {
+            ChatTrackedPlayersTable.insert {
+                it[ChatTrackedPlayersTable.chatId] = chatId
+                it[ChatTrackedPlayersTable.playerId] = playerId
+                it[ChatTrackedPlayersTable.trackedSince] = trackedSince
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    suspend fun unlinkPlayer(chatId: Long, playerId: String): Boolean = dbQuery {
+        val deleted = ChatTrackedPlayersTable.deleteWhere {
+            (ChatTrackedPlayersTable.chatId eq chatId) and (ChatTrackedPlayersTable.playerId eq playerId)
+        }
+        deleted > 0
+    }
+
+    suspend fun isPlayerTrackedInChat(chatId: Long, playerId: String): Boolean = dbQuery {
+        ChatTrackedPlayersTable.selectAll()
+            .where { (ChatTrackedPlayersTable.chatId eq chatId) and (ChatTrackedPlayersTable.playerId eq playerId) }
+            .count() > 0
+    }
+
+    suspend fun isPlayerTrackedAnywhere(playerId: String): Boolean = dbQuery {
+        ChatTrackedPlayersTable.selectAll()
+            .where { ChatTrackedPlayersTable.playerId eq playerId }
+            .count() > 0
+    }
+
+    suspend fun getTrackedPlayersForChat(chatId: Long): List<TrackedPlayer> = dbQuery {
+        val playerIds = ChatTrackedPlayersTable.selectAll()
+            .where { ChatTrackedPlayersTable.chatId eq chatId }
+            .map { it[ChatTrackedPlayersTable.playerId] }
+        if (playerIds.isEmpty()) return@dbQuery emptyList()
+        TrackedPlayersTable.selectAll()
+            .where { TrackedPlayersTable.faceitId inList playerIds }
+            .map { playerRepository.rowToPlayer(it) }
+    }
+
+    suspend fun getChatIdsForPlayer(playerId: String): List<Long> = dbQuery {
+        ChatTrackedPlayersTable.selectAll()
+            .where { ChatTrackedPlayersTable.playerId eq playerId }
+            .map { it[ChatTrackedPlayersTable.chatId] }
+    }
+
+    suspend fun getChatIdsForPlayers(playerIds: Collection<String>): Map<Long, List<String>> = dbQuery {
+        if (playerIds.isEmpty()) return@dbQuery emptyMap()
+        ChatTrackedPlayersTable.selectAll()
+            .where { ChatTrackedPlayersTable.playerId inList playerIds }
+            .groupBy(
+                keySelector = { it[ChatTrackedPlayersTable.chatId] },
+                valueTransform = { it[ChatTrackedPlayersTable.playerId] }
+            )
+    }
+
+    suspend fun getAllDistinctTrackedPlayers(): List<TrackedPlayer> = dbQuery {
+        val distinctPlayerIds = ChatTrackedPlayersTable.selectAll()
+            .map { it[ChatTrackedPlayersTable.playerId] }
+            .distinct()
+        if (distinctPlayerIds.isEmpty()) return@dbQuery emptyList()
+        TrackedPlayersTable.selectAll()
+            .where { TrackedPlayersTable.faceitId inList distinctPlayerIds }
+            .map { playerRepository.rowToPlayer(it) }
+    }
+
+    suspend fun migrateInitialData(chatIds: List<Long>, players: List<TrackedPlayer>) = dbQuery {
+        val count = ChatTrackedPlayersTable.selectAll().count()
+        if (count == 0L && chatIds.isNotEmpty() && players.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            for (chatId in chatIds) {
+                for (player in players) {
+                    ChatTrackedPlayersTable.insert {
+                        it[ChatTrackedPlayersTable.chatId] = chatId
+                        it[ChatTrackedPlayersTable.playerId] = player.faceitId
+                        it[ChatTrackedPlayersTable.trackedSince] = player.trackedSince.takeIf { ts -> ts > 0L } ?: now
+                    }
+                }
+            }
+        }
+    }
+}
+
+class WordReactionRepository {
+    suspend fun saveReaction(reaction: WordReaction): WordReaction = dbQuery {
+        val existing = WordReactionsTable.selectAll()
+            .where { (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq reaction.trigger.lowercase()) }
+            .singleOrNull()
+
+        if (existing != null) {
+            WordReactionsTable.update({
+                (WordReactionsTable.chatId eq reaction.chatId) and (WordReactionsTable.trigger eq reaction.trigger.lowercase())
+            }) {
+                it[responseType] = reaction.responseType.name
+                it[responseContent] = reaction.responseContent
+                it[createdBy] = reaction.createdBy
+                it[createdAt] = reaction.createdAt
+            }
+        } else {
+            WordReactionsTable.insert {
+                it[chatId] = reaction.chatId
+                it[trigger] = reaction.trigger.lowercase()
+                it[responseType] = reaction.responseType.name
+                it[responseContent] = reaction.responseContent
+                it[createdBy] = reaction.createdBy
+                it[createdAt] = reaction.createdAt
+            }
+        }
+        reaction
+    }
+
+    suspend fun deleteReaction(chatId: Long, trigger: String): Boolean = dbQuery {
+        val deleted = WordReactionsTable.deleteWhere {
+            (WordReactionsTable.chatId eq chatId) and (WordReactionsTable.trigger eq trigger.lowercase())
+        }
+        deleted > 0
+    }
+
+    suspend fun getReactionsForChat(chatId: Long): List<WordReaction> = dbQuery {
+        WordReactionsTable.selectAll()
+            .where { WordReactionsTable.chatId eq chatId }
+            .map { rowToWordReaction(it) }
+    }
+
+    suspend fun getAllReactions(): List<WordReaction> = dbQuery {
+        WordReactionsTable.selectAll()
+            .map { rowToWordReaction(it) }
+    }
+
+    private fun rowToWordReaction(row: ResultRow) = WordReaction(
+        id = row[WordReactionsTable.id].value,
+        chatId = row[WordReactionsTable.chatId],
+        trigger = row[WordReactionsTable.trigger],
+        responseType = runCatching { ReactionType.valueOf(row[WordReactionsTable.responseType]) }.getOrDefault(ReactionType.TEXT),
+        responseContent = row[WordReactionsTable.responseContent],
+        createdBy = row[WordReactionsTable.createdBy],
+        createdAt = row[WordReactionsTable.createdAt]
+    )
+}
+
+class ChatSettingsRepository {
+    suspend fun getReactionsPermissionMode(chatId: Long): ReactionsPermissionMode = dbQuery {
+        ChatSettingsTable.selectAll()
+            .where { ChatSettingsTable.chatId eq chatId }
+            .singleOrNull()
+            ?.let {
+                val modeStr = it[ChatSettingsTable.reactionsAllowedMode]
+                runCatching { ReactionsPermissionMode.valueOf(modeStr) }.getOrDefault(ReactionsPermissionMode.ADMIN)
+            } ?: ReactionsPermissionMode.ADMIN
+    }
+
+    suspend fun setReactionsPermissionMode(chatId: Long, mode: ReactionsPermissionMode) = dbQuery {
+        val existing = ChatSettingsTable.selectAll()
+            .where { ChatSettingsTable.chatId eq chatId }
+            .singleOrNull()
+
+        val now = System.currentTimeMillis()
+        if (existing != null) {
+            ChatSettingsTable.update({ ChatSettingsTable.chatId eq chatId }) {
+                it[reactionsAllowedMode] = mode.name
+                it[updatedAt] = now
+            }
+        } else {
+            ChatSettingsTable.insert {
+                it[ChatSettingsTable.chatId] = chatId
+                it[reactionsAllowedMode] = mode.name
+                it[updatedAt] = now
+            }
+        }
+    }
+
+    suspend fun getAllSettings(): Map<Long, ReactionsPermissionMode> = dbQuery {
+        ChatSettingsTable.selectAll().associate {
+            val chatId = it[ChatSettingsTable.chatId]
+            val mode = runCatching {
+                ReactionsPermissionMode.valueOf(it[ChatSettingsTable.reactionsAllowedMode])
+            }.getOrDefault(ReactionsPermissionMode.ADMIN)
+            chatId to mode
+        }
     }
 }

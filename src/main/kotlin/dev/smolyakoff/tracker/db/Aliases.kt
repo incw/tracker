@@ -6,3 +6,6 @@ typealias TrackedPlayer = dev.smolyakoff.tracker.db.model.TrackedPlayer
 typealias MatchRecord = dev.smolyakoff.tracker.db.model.MatchRecord
 typealias EloSnapshot = dev.smolyakoff.tracker.db.model.EloSnapshot
 typealias ChatSubscription = dev.smolyakoff.tracker.db.model.ChatSubscription
+typealias WordReaction = dev.smolyakoff.tracker.db.model.WordReaction
+typealias ReactionType = dev.smolyakoff.tracker.db.model.ReactionType
+typealias ReactionsPermissionMode = dev.smolyakoff.tracker.db.model.ReactionsPermissionMode

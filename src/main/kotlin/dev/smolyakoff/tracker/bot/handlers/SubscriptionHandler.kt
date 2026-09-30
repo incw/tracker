@@ -16,6 +16,7 @@ import dev.smolyakoff.tracker.service.MessageFormatter
 class SubscriptionHandler(
     private val chatRepository: ChatRepository,
     private val playerRepository: PlayerRepository,
+    private val chatTrackedPlayerRepository: dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository,
     private val notificationService: NotificationService
 ) {
     private val ChatMessage.chatId: Long get() = chat.id.chatId.long
@@ -59,7 +60,7 @@ class SubscriptionHandler(
 
         onCommand("status") { message ->
             val isSubscribed = chatRepository.getAllChatIds().contains(message.chatId)
-            val totalPlayers = playerRepository.getAll().size
+            val totalPlayers = chatTrackedPlayerRepository.getTrackedPlayersForChat(message.chatId).size
             val statusEmoji = if (isSubscribed) "🟢" else "🔴"
             val statusText = if (isSubscribed) "Подписан" else "Не подписан"
             val text = buildString {

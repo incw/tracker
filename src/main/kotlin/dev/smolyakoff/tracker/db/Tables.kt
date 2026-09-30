@@ -48,3 +48,32 @@ object EloSnapshotsTable : IntIdTable("elo_snapshots") {
     val matchId = varchar("match_id", 64).nullable()
     val recordedAt = long("recorded_at")
 }
+
+object ChatTrackedPlayersTable : IntIdTable("chat_tracked_players") {
+    val chatId = long("chat_id").index()
+    val playerId = varchar("player_id", 64).index()
+    val trackedSince = long("tracked_since").default(0L)
+
+    init {
+        index(isUnique = true, chatId, playerId)
+    }
+}
+
+object WordReactionsTable : IntIdTable("word_reactions") {
+    val chatId = long("chat_id").index()
+    val trigger = varchar("trigger", 128)
+    val responseType = varchar("response_type", 16)
+    val responseContent = text("response_content")
+    val createdBy = long("created_by")
+    val createdAt = long("created_at")
+
+    init {
+        index(isUnique = true, chatId, trigger)
+    }
+}
+
+object ChatSettingsTable : IntIdTable("chat_settings") {
+    val chatId = long("chat_id").uniqueIndex()
+    val reactionsAllowedMode = varchar("reactions_allowed_mode", 16).default("ADMIN")
+    val updatedAt = long("updated_at")
+}

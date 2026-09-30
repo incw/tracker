@@ -27,6 +27,7 @@ class MatchPoller(
     private val scope: CoroutineScope,
     private val faceitApiClient: FaceitApiClient,
     private val playerRepository: PlayerRepository,
+    private val chatTrackedPlayerRepository: dev.smolyakoff.tracker.db.ChatTrackedPlayerRepository,
     private val matchRepository: MatchRepository,
     private val eloTracker: EloTracker,
     private val notificationService: NotificationService,
@@ -68,9 +69,9 @@ class MatchPoller(
     }
 
     suspend fun pollOnce() {
-        val trackedPlayers = playerRepository.getAll()
+        val trackedPlayers = chatTrackedPlayerRepository.getAllDistinctTrackedPlayers()
         if (trackedPlayers.isEmpty()) {
-            logger.debug("No players tracked, skipping poll.")
+            logger.debug("No players tracked in any chat, skipping poll.")
             return
         }
 
@@ -123,7 +124,7 @@ class MatchPoller(
         val round = statsResponse.rounds.first()
         val allMatchPlayers = round.teams.flatMap { it.players }
 
-        val displayPlayers = mutableListOf<PlayerMatchDisplayData>()
+        val playerEvaluations = mutableMapOf<String, PlayerMatchDisplayData>()
         var matchWon = false
 
         for (pending in pendingPlayers) {
@@ -139,18 +140,12 @@ class MatchPoller(
             val teamPlayers = myTeam?.players ?: allMatchPlayers
 
             val evaluation = evaluatePlayerPerformance(trackedPlayer, matchPlayer, round, matchId, pending.finishedAt, teamPlayers)
-            displayPlayers.add(evaluation.displayData)
+            playerEvaluations[trackedPlayer.faceitId] = evaluation.displayData
         }
 
-        if (displayPlayers.isNotEmpty()) {
-            val formattedScore = round.formatScoreForPlayer(pendingPlayers.first().player.faceitId)
-            val matchCard = MessageFormatter.formatMatchCard(
-                map = round.map,
-                score = formattedScore,
-                won = matchWon,
-                durationMinutes = durationMinutes,
-                players = displayPlayers
-            )
+        if (playerEvaluations.isNotEmpty()) {
+            val pendingFaceitIds = pendingPlayers.map { it.player.faceitId }
+            val chatPlayersMap = chatTrackedPlayerRepository.getChatIdsForPlayers(pendingFaceitIds)
 
             val matchUrl = "https://www.faceit.com/en/cs2/room/$matchId"
             val markup = InlineKeyboardMarkup(
@@ -164,7 +159,21 @@ class MatchPoller(
                 )
             )
 
-            notificationService.broadcastMessage(matchCard, markup)
+            // Send tailored card to each chat that tracks at least one player in this match
+            for ((targetChatId, faceitIdsInChat) in chatPlayersMap) {
+                val displayPlayersForChat = faceitIdsInChat.mapNotNull { playerEvaluations[it] }
+                if (displayPlayersForChat.isNotEmpty()) {
+                    val formattedScore = round.formatScoreForPlayer(faceitIdsInChat.first())
+                    val matchCard = MessageFormatter.formatMatchCard(
+                        map = round.map,
+                        score = formattedScore,
+                        won = matchWon,
+                        durationMinutes = durationMinutes,
+                        players = displayPlayersForChat
+                    )
+                    notificationService.sendMessage(targetChatId, matchCard, markup)
+                }
+            }
         }
     }
 

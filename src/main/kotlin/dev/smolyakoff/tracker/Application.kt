@@ -26,9 +26,12 @@ class TrackerApp(
     private val logger = LoggerFactory.getLogger(TrackerApp::class.java)
 
     val playerRepository = PlayerRepository()
+    val chatTrackedPlayerRepository = ChatTrackedPlayerRepository(playerRepository)
     val chatRepository = ChatRepository()
     val matchRepository = MatchRepository()
     val eloRepository = EloRepository()
+    val wordReactionRepository = WordReactionRepository()
+    val wordReactionService = dev.smolyakoff.tracker.service.WordReactionService(wordReactionRepository)
 
     val rateLimiter = RateLimiter(capacity = 8.0, refillRatePerSecond = 8.0)
     val httpClient = HttpClient(CIO) {
@@ -56,9 +59,11 @@ class TrackerApp(
     val commandHandlers = CommandHandlers(
         faceitApiClient = faceitApiClient,
         playerRepository = playerRepository,
+        chatTrackedPlayerRepository = chatTrackedPlayerRepository,
         chatRepository = chatRepository,
         matchRepository = matchRepository,
         eloRepository = eloRepository,
+        wordReactionService = wordReactionService,
         notificationService = notificationService
     )
 
@@ -66,6 +71,7 @@ class TrackerApp(
         scope = scope,
         faceitApiClient = faceitApiClient,
         playerRepository = playerRepository,
+        chatTrackedPlayerRepository = chatTrackedPlayerRepository,
         matchRepository = matchRepository,
         eloTracker = eloTracker,
         notificationService = notificationService,
@@ -77,6 +83,17 @@ class TrackerApp(
     suspend fun start() {
         logger.info("Initializing SQLite database at: {}", config.sqliteDbPath)
         DatabaseFactory.init(config.sqliteDbPath)
+
+        // Seamless migration for existing installations: link all existing players to existing chats
+        val existingChats = chatRepository.getAllChatIds().toMutableList()
+        if (config.defaultChatId != null && config.defaultChatId != 0L && !existingChats.contains(config.defaultChatId)) {
+            existingChats.add(config.defaultChatId)
+        }
+        val existingPlayers = playerRepository.getAll()
+        chatTrackedPlayerRepository.migrateInitialData(existingChats, existingPlayers)
+
+        // Initialize in-memory cache of word reactions
+        wordReactionService.initCache()
 
         if (config.telegramBotToken.isNotBlank()) {
             val launcher = BotLauncher(config.telegramBotToken, commandHandlers)
