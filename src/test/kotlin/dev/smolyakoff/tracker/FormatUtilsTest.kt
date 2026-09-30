@@ -38,6 +38,19 @@ class FormatUtilsTest {
     }
 
     @Test
+    fun testParseTriggers() {
+        assertEquals(listOf("симиль", "симпл", "s1mple"), dev.smolyakoff.tracker.util.parseTriggers("[симиль, симпл, s1mple]"))
+        assertEquals(listOf("симиль", "симпл"), dev.smolyakoff.tracker.util.parseTriggers("[симиль,симпл]"))
+        assertEquals(listOf("симиль", "симпл"), dev.smolyakoff.tracker.util.parseTriggers("симиль, симпл"))
+        assertEquals(listOf("симиль мясо", "симпл"), dev.smolyakoff.tracker.util.parseTriggers("[симиль мясо, симпл]"))
+        assertEquals(listOf("симиль"), dev.smolyakoff.tracker.util.parseTriggers("симиль"))
+        assertEquals(listOf("симиль"), dev.smolyakoff.tracker.util.parseTriggers("[симиль]"))
+        assertEquals(listOf("симиль"), dev.smolyakoff.tracker.util.parseTriggers("[симиль, симиль]"))
+        assertEquals(emptyList<String>(), dev.smolyakoff.tracker.util.parseTriggers(""))
+        assertEquals(emptyList<String>(), dev.smolyakoff.tracker.util.parseTriggers("[   ]"))
+    }
+
+    @Test
     fun testFormatNumber() {
         assertEquals("1,000", 1000.formatNumber())
         assertEquals("3,089", 3089.formatNumber())

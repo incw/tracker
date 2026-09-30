@@ -18,6 +18,27 @@ fun parseNicknames(input: String): List<String> = input
     .filter { it.isNotEmpty() }
     .distinct()
 
+/**
+ * Parses trigger words or phrases from command input.
+ * Supports bracketed array syntax e.g. "[симиль, симпл, s1mple]" or comma-separated "симиль, симпл".
+ * Preserves multi-word trigger phrases within items (e.g. "[симиль мясо, симпл]" -> ["симиль мясо", "симпл"]).
+ */
+fun parseTriggers(input: String): List<String> {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return emptyList()
+
+    val content = if (trimmed.startsWith("[") && trimmed.contains("]")) {
+        trimmed.substringAfter("[").substringBefore("]")
+    } else {
+        trimmed.removePrefix("[").removeSuffix("]")
+    }
+
+    return content.split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+}
+
 fun Int.formatNumber(): String = String.format(Locale.US, "%,d", this)
 
 fun countryCodeToFlag(code: String?): String {

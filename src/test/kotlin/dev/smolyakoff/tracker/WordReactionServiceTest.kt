@@ -144,4 +144,36 @@ class WordReactionServiceTest {
         service.setReactionsPermissionMode(chatId, dev.smolyakoff.tracker.db.model.ReactionsPermissionMode.ADMIN)
         assertEquals(dev.smolyakoff.tracker.db.model.ReactionsPermissionMode.ADMIN, service.getReactionsPermissionMode(chatId))
     }
+
+    @Test
+    fun `test batch reactions matching for array of triggers`() = runTest {
+        val repo = mockk<WordReactionRepository>()
+        val service = WordReactionService(repo)
+        val chatId = 777L
+
+        coEvery { repo.getAllReactions() } returns emptyList()
+        service.initCache()
+
+        val triggers = listOf("симиль", "симпл", "s1mple")
+        for (trigger in triggers) {
+            val reaction = WordReaction(
+                id = trigger.hashCode(),
+                chatId = chatId,
+                trigger = trigger,
+                responseType = ReactionType.TEXT,
+                responseContent = "мясо",
+                createdBy = 101L
+            )
+            coEvery { repo.saveReaction(match { it.trigger == trigger }) } returns reaction
+            service.addReaction(chatId, trigger, ReactionType.TEXT, "мясо", 101L)
+        }
+
+        // Each trigger in the array matches individually
+        assertNotNull(service.findMatchingReaction(chatId, "Кто тут симиль?"))
+        assertNotNull(service.findMatchingReaction(chatId, "Привет, симпл!"))
+        assertNotNull(service.findMatchingReaction(chatId, "s1mple is here"))
+
+        // Unrelated word does not match
+        assertNull(service.findMatchingReaction(chatId, "просто текст"))
+    }
 }

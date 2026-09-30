@@ -21,6 +21,7 @@ import dev.smolyakoff.tracker.bot.NotificationService
 import dev.smolyakoff.tracker.db.model.ReactionType
 import dev.smolyakoff.tracker.service.WordReactionService
 import dev.smolyakoff.tracker.util.escapeHtml
+import dev.smolyakoff.tracker.util.parseTriggers
 import org.slf4j.LoggerFactory
 
 class WordReactionHandler(
@@ -132,13 +133,88 @@ class WordReactionHandler(
             return
         }
 
-        // Delete: /word del <trigger> or /word remove <trigger>
+        // Delete: /word del <trigger(s)> or /word remove <trigger(s)>
         if (firstArg == "del" || firstArg == "remove" || firstArg == "delete") {
-            val trigger = args.drop(1).joinToString(" ").trim()
-            if (trigger.isBlank()) {
-                notificationService.sendMessage(chatId, "⚠️ <b>Использование:</b> <code>/word del &lt;слово&gt;</code>")
+            val toDeleteRaw = args.drop(1).joinToString(" ").trim()
+            val triggers = parseTriggers(toDeleteRaw)
+            handleDeleteWords(chatId, triggers)
+            return
+        }
+
+        val rawArgs = args.joinToString(" ").trim()
+
+        // Check for DSL operator: /word [w1, w2, ...] reacted by <response> (or single word: /word w1 reacted by <response>)
+        val reactedByRegex = Regex("(?i)\\breacted\\s+by\\b")
+        val reactedRegex = Regex("(?i)\\breacted\\b")
+        val match = reactedByRegex.find(rawArgs) ?: reactedRegex.find(rawArgs)
+        if (match != null) {
+            val triggersPart = rawArgs.substring(0, match.range.first).trim()
+            val responsePart = rawArgs.substring(match.range.last + 1).trim()
+            val triggers = parseTriggers(triggersPart)
+            if (triggers.isNotEmpty()) {
+                processAddWords(message, chatId, senderId, triggers, responsePart)
                 return
             }
+        }
+
+        // Check for bracketed triggers at the beginning: /word [w1, w2, ...] <response>
+        if (rawArgs.startsWith("[") && rawArgs.contains("]")) {
+            val closeIndex = rawArgs.indexOf("]")
+            val triggersPart = rawArgs.substring(0, closeIndex + 1)
+            val rest = rawArgs.substring(closeIndex + 1).trim()
+            val cleanResponse = rest.replace(Regex("^(?i)(reacted\\s+by|reacted)\\s*"), "").trim()
+            val triggers = parseTriggers(triggersPart)
+            if (triggers.isNotEmpty()) {
+                processAddWords(message, chatId, senderId, triggers, cleanResponse)
+                return
+            }
+        }
+
+        // Check for legacy: "/word add <trigger> [response]"
+        if (firstArg == "add") {
+            val remainingRaw = args.drop(1).joinToString(" ").trim()
+            if (remainingRaw.isBlank()) {
+                notificationService.sendMessage(
+                    chatId,
+                    "⚠️ <b>Использование:</b> <code>/word [слово1, ...] reacted by &lt;ответ&gt;</code> или <code>/word add &lt;слово&gt; &lt;ответ&gt;</code>"
+                )
+                return
+            }
+            if (remainingRaw.startsWith("[") && remainingRaw.contains("]")) {
+                val closeIndex = remainingRaw.indexOf("]")
+                val triggersPart = remainingRaw.substring(0, closeIndex + 1)
+                val responsePart = remainingRaw.substring(closeIndex + 1).trim()
+                val triggers = parseTriggers(triggersPart)
+                processAddWords(message, chatId, senderId, triggers, responsePart)
+                return
+            } else {
+                val remainingArgs = args.drop(1)
+                val repliedContent = extractRepliedContent(message)
+                val (trigger, rawResponse) = if (repliedContent != null && remainingArgs.size == 1) {
+                    remainingArgs[0] to ""
+                } else {
+                    remainingArgs.first() to remainingArgs.drop(1).joinToString(" ").trim()
+                }
+                processAddWords(message, chatId, senderId, listOf(trigger), rawResponse)
+                return
+            }
+        }
+
+        // If unknown format, show help
+        sendHelp(chatId)
+    }
+
+    private suspend fun handleDeleteWords(chatId: Long, triggers: List<String>) {
+        if (triggers.isEmpty()) {
+            notificationService.sendMessage(
+                chatId,
+                "⚠️ <b>Использование:</b> <code>/word del &lt;слово&gt;</code> или <code>/word del [слово1, слово2, ...]</code>"
+            )
+            return
+        }
+
+        if (triggers.size == 1) {
+            val trigger = triggers.first()
             val deleted = wordReactionService.deleteReaction(chatId, trigger)
             val reply = if (deleted) {
                 "🗑️ Реакция на слово <b>«${trigger.escapeHtml()}»</b> успешно удалена."
@@ -149,51 +225,43 @@ class WordReactionHandler(
             return
         }
 
-        // Check for "reacted" keyword syntax: /word <trigger> reacted <response>
-        val reactedIndex = args.indexOfFirst { it.equals("reacted", ignoreCase = true) }
-        if (reactedIndex > 0) {
-            val trigger = args.slice(0 until reactedIndex).joinToString(" ").trim()
-            val rawResponse = args.slice((reactedIndex + 1) until args.size).joinToString(" ").trim()
-            processAddWord(message, chatId, senderId, trigger, rawResponse)
-            return
-        }
-
-        // Check for "/word add <trigger> [response]"
-        if (firstArg == "add") {
-            val remainingArgs = args.drop(1)
-            if (remainingArgs.isEmpty()) {
-                notificationService.sendMessage(
-                    chatId,
-                    "⚠️ <b>Использование:</b> <code>/word add &lt;слово&gt; &lt;ответ&gt;</code> или ответьте командой на стикер/текст."
-                )
-                return
-            }
-
-            // If remainingArgs has more than 1 item, first is trigger, rest is response
-            // Or if reply is attached, all remainingArgs can be trigger
-            val repliedContent = extractRepliedContent(message)
-            val (trigger, rawResponse) = if (repliedContent != null && remainingArgs.size == 1) {
-                remainingArgs[0] to ""
+        val deletedList = mutableListOf<String>()
+        val notFoundList = mutableListOf<String>()
+        for (trigger in triggers) {
+            if (wordReactionService.deleteReaction(chatId, trigger)) {
+                deletedList.add(trigger)
             } else {
-                remainingArgs.first() to remainingArgs.drop(1).joinToString(" ").trim()
+                notFoundList.add(trigger)
             }
-
-            processAddWord(message, chatId, senderId, trigger, rawResponse)
-            return
         }
 
-        // If unknown format, show help
-        sendHelp(chatId)
+        val reply = buildString {
+            if (deletedList.isNotEmpty()) {
+                appendLine("🗑️ <b>Удалены реакции на слова:</b>")
+                for (t in deletedList) {
+                    appendLine("• <b>«${t.escapeHtml()}»</b>")
+                }
+            }
+            if (notFoundList.isNotEmpty()) {
+                if (deletedList.isNotEmpty()) appendLine()
+                appendLine("⚠️ <b>Не найдены в этом чате:</b>")
+                for (t in notFoundList) {
+                    appendLine("• <b>«${t.escapeHtml()}»</b>")
+                }
+            }
+        }.trim()
+
+        notificationService.sendMessage(chatId, reply)
     }
 
-    private suspend fun processAddWord(
+    private suspend fun processAddWords(
         message: ChatMessage,
         chatId: Long,
         senderId: Long,
-        trigger: String,
+        triggers: List<String>,
         rawResponse: String
     ) {
-        if (trigger.isBlank()) {
+        if (triggers.isEmpty()) {
             notificationService.sendMessage(chatId, "⚠️ Ключевое слово не может быть пустым.")
             return
         }
@@ -223,29 +291,41 @@ class WordReactionHandler(
                 }
             }
             else -> {
+                val exampleTriggers = if (triggers.size > 1) "[${triggers.joinToString(", ")}]" else triggers.first()
                 notificationService.sendMessage(
                     chatId,
                     "⚠️ Укажите текст ответа или отправьте команду в ответ (reply) на стикер/сообщение.\n" +
-                            "<i>Пример:</i> <code>/word add $trigger мясо</code> или <code>/word $trigger reacted мясо</code>"
+                            "<i>Пример:</i> <code>/word $exampleTriggers reacted by мясо</code>"
                 )
                 return
             }
         }
 
-        wordReactionService.addReaction(
-            chatId = chatId,
-            trigger = trigger,
-            type = reactionType,
-            content = responseContent,
-            createdBy = senderId
-        )
+        for (trigger in triggers) {
+            wordReactionService.addReaction(
+                chatId = chatId,
+                trigger = trigger,
+                type = reactionType,
+                content = responseContent,
+                createdBy = senderId
+            )
+        }
 
-        notificationService.sendMessage(
-            chatId,
+        val reply = if (triggers.size == 1) {
             "✅ <b>Реакция сохранена!</b>\n" +
-                    "Слово: <b>«${trigger.escapeHtml()}»</b>\n" +
+                    "Слово: <b>«${triggers.first().escapeHtml()}»</b>\n" +
                     "Ответ бота: <b>$displayDesc</b>"
-        )
+        } else {
+            buildString {
+                appendLine("✅ <b>Реакции сохранены для ${triggers.size} слов:</b>")
+                for (t in triggers) {
+                    appendLine("• <b>«${t.escapeHtml()}»</b>")
+                }
+                appendLine("Ответ бота: <b>$displayDesc</b>")
+            }.trim()
+        }
+
+        notificationService.sendMessage(chatId, reply)
     }
 
     private fun extractRepliedContent(message: ChatMessage): dev.inmo.tgbotapi.types.message.content.MessageContent? {
@@ -259,7 +339,7 @@ class WordReactionHandler(
             notificationService.sendMessage(
                 chatId,
                 "ℹ️ В этом чате пока нет настроенных реакций на слова.\n" +
-                        "Добавьте первую: <code>/word add &lt;слово&gt; &lt;ответ&gt;</code>"
+                        "Добавьте первую: <code>/word [слово] reacted by &lt;ответ&gt;</code>"
             )
             return
         }
@@ -277,7 +357,7 @@ class WordReactionHandler(
                 appendLine("${index + 1}. <b>«${r.trigger.escapeHtml()}»</b> [$typeIcon$preview]")
             }
             appendLine("─────────────────────")
-            appendLine("<i>Удалить: /word del &lt;слово&gt;</i>")
+            appendLine("<i>Удалить: /word del [слово1, слово2]</i>")
         }
         notificationService.sendMessage(chatId, text)
     }
@@ -293,12 +373,12 @@ class WordReactionHandler(
         val help = buildString {
             appendLine("💬 <b>Настройка реакций на сообщения (/word):</b>")
             appendLine("─────────────────────")
-            appendLine("• <code>/word add &lt;слово&gt; &lt;ответ&gt;</code> — добавить текстовый ответ")
-            appendLine("• <code>/word &lt;слово&gt; reacted &lt;ответ&gt;</code> — альтернативный формат")
-            appendLine("• <code>/word add &lt;слово&gt; 🔥</code> — реакция эмодзи на сообщение")
-            appendLine("• Ответом на стикер: <code>/word add &lt;слово&gt;</code> — бот ответит этим стикером")
-            appendLine("• <code>/word del &lt;слово&gt;</code> — удалить реакцию")
-            appendLine("• <code>/words</code> — список реакций в чате")
+            appendLine("• <code>/word [w1, w2, ...] reacted by &lt;ответ&gt;</code> — привязать ответ к массиву слов")
+            appendLine("• <code>/word &lt;слово&gt; reacted by &lt;ответ&gt;</code> — привязать ответ к одному слову")
+            appendLine("• <code>/word [w1, w2] reacted by 🔥</code> — реакция эмодзи на слова")
+            appendLine("• Ответом на стикер: <code>/word [w1, w2] reacted by</code>")
+            appendLine("• <code>/word del [w1, w2, ...]</code> — удалить реакции на слова")
+            appendLine("• <code>/words</code> или <code>/word list</code> — список реакций в чате")
             appendLine("─────────────────────")
             appendLine(permissionNote)
         }
