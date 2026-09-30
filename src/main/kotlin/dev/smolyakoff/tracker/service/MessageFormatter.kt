@@ -16,7 +16,6 @@ data class PlayerMatchDisplayData(
     val deaths: Int,
     val assists: Int,
     val adr: Double,
-    val rating: Double,
     val hsPercent: Int,
     val mvps: Int,
     val entryKills: Int,
@@ -70,9 +69,9 @@ object MessageFormatter {
                 "ADR: <b>${p.adr.formatAdr()}</b> | " +
                 "HS: <b>${p.hsPercent}%</b>"
             )
-            appendLine("📊 Рейтинг: <b>${p.rating.formatKd()}</b> (HLTV-based) | MVP: <b>${p.mvps}</b>")
 
             // Conditional stats — only show if non-zero
+            val mvpPart = if (p.mvps > 0) "⭐️ MVP: <b>${p.mvps}</b>" else null
             val entryPart = if (p.entryTotal > 0) "⚡ Энтри: <b>${p.entryKills}/${p.entryTotal}</b> (${p.entryWinRate}%)" else null
             val clutchPart = if (p.clutches1v1 > 0 || p.clutches1v2 > 0) {
                 val list = mutableListOf<String>()
@@ -81,7 +80,7 @@ object MessageFormatter {
                 "🏆 Клатчи: <b>${list.joinToString(", ")}</b>"
             } else null
 
-            listOfNotNull(entryPart, clutchPart).takeIf { it.isNotEmpty() }
+            listOfNotNull(mvpPart, entryPart, clutchPart).takeIf { it.isNotEmpty() }
                 ?.let { appendLine(it.joinToString(" | ")) }
 
             val utilPart = if (p.utilityDamage > 0) "💣 <b>${p.utilityDamage} HP</b>" else null
@@ -247,10 +246,8 @@ object MessageFormatter {
         appendLine("/help — это меню")
         appendLine()
         appendLine("📌 <b>Вердикты в команде (из 5 игроков):</b>")
-        appendLine("• <b>High impact</b> — лучший рейтинг в команде (1-е место)")
+        appendLine("• <b>High impact</b> — лучший K/D в команде (1-е место)")
         appendLine("• <b>пойдётская</b> — обычная игра (2-е, 3-е, 4-е место)")
         appendLine("• <b>мясо / мусор / клоун</b> — худший результат в команде (5-е место)")
-        appendLine()
-        appendLine("📌 <b>Рейтинг в карточке матча</b> — считается по HLTV-формуле на основе KPR, DPR, ADR и impact.")
     }
 }

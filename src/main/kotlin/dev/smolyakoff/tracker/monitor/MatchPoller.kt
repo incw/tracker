@@ -187,8 +187,7 @@ class MatchPoller(
             matchId = matchId
         )
 
-        val rating = matchPlayer.calculateCs2Rating(round.roundsCount)
-        val verdict = VerdictService.evaluateVerdict(matchPlayer, teamPlayers, round.roundsCount)
+        val verdict = VerdictService.evaluateVerdict(matchPlayer, teamPlayers)
 
         val matchTimestamp = if (finishedAtSeconds > 0L) finishedAtSeconds * 1000L else System.currentTimeMillis()
 
@@ -219,7 +218,6 @@ class MatchPoller(
             deaths = matchPlayer.deaths,
             assists = matchPlayer.assists,
             adr = matchPlayer.adr,
-            rating = rating,
             hsPercent = matchPlayer.headshotPercent,
             mvps = matchPlayer.mvps,
             entryKills = matchPlayer.firstKills,

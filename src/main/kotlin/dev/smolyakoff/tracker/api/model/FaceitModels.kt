@@ -200,27 +200,6 @@ data class MatchPlayer(
     val enemiesFlashed: Int
         get() = playerStats["Enemies Flashed"]?.toIntOrNull() ?: 0
 
-    /**
-     * Calculates HLTV-based rating using our own formula (KPR, DPR, ADR, impact).
-     * Does NOT fall back to the API's "Rating" field (which is HLTV 1.0 and inflated
-     * in short matches). Always uses consistent calculation.
-     */
-    fun calculateCs2Rating(rounds: Int): Double {
-        val r = if (rounds > 0) rounds else 24
-        val kpr = kills.toDouble() / r
-        val dpr = deaths.toDouble() / r
-        val apr = assists.toDouble() / r
-
-        val k2 = playerStats["Double Kills"]?.toIntOrNull() ?: 0
-        val k3 = playerStats["Triple Kills"]?.toIntOrNull() ?: 0
-        val k4 = playerStats["Quadro Kills"]?.toIntOrNull() ?: 0
-        val k5 = playerStats["Penta Kills"]?.toIntOrNull() ?: 0
-        val multikillBonus = (k2 * 1 + k3 * 2 + k4 * 3 + k5 * 4).toDouble() / r
-
-        val impact = (2.13 * kpr) + (0.42 * apr) - 0.41 + (multikillBonus * 0.5)
-        val baseRating = (0.00738 * adr) + (0.3591 * kpr) - (0.5329 * dpr) + (0.2372 * impact) + 0.38
-        return (Math.round(baseRating * 100.0) / 100.0).coerceAtLeast(0.1)
-    }
 }
 
 @Serializable

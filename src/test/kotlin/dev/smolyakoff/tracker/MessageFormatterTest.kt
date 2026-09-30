@@ -19,7 +19,6 @@ class MessageFormatterTest {
         deaths: Int,
         assists: Int,
         adr: Double,
-        rating: Double,
         hsPercent: Int,
         mvps: Int,
         verdict: String,
@@ -41,7 +40,6 @@ class MessageFormatterTest {
         deaths = deaths,
         assists = assists,
         adr = adr,
-        rating = rating,
         hsPercent = hsPercent,
         mvps = mvps,
         entryKills = entryKills,
@@ -67,7 +65,6 @@ class MessageFormatterTest {
             deaths = 12,
             assists = 4,
             adr = 105.4,
-            rating = 1.65,
             hsPercent = 52,
             mvps = 4,
             verdict = "High impact",
@@ -94,7 +91,8 @@ class MessageFormatterTest {
         assertTrue(card.contains("32 мин."))
         assertTrue(card.contains("s1mple"))
         assertTrue(card.contains("+25"))
-        assertTrue(card.contains("Рейтинг: <b>1.65</b> (HLTV-based)"))
+        assertFalse(card.contains("Рейтинг:"))
+        assertTrue(card.contains("⭐️ MVP: <b>4</b>"))
         assertTrue(card.contains("Энтри: <b>4/5</b> (80%)"))
         assertTrue(card.contains("1v1 (1)"))
         assertTrue(card.contains("75 HP"))
@@ -109,7 +107,6 @@ class MessageFormatterTest {
             deaths = 14,
             assists = 3,
             adr = 85.0,
-            rating = 1.25,
             hsPercent = 45,
             mvps = 3,
             verdict = "High impact"
@@ -120,7 +117,6 @@ class MessageFormatterTest {
             deaths = 23,
             assists = 1,
             adr = 35.0,
-            rating = 0.45,
             hsPercent = 20,
             mvps = 0,
             verdict = "клоун",
@@ -164,7 +160,6 @@ class MessageFormatterTest {
             deaths = 15,
             assists = 2,
             adr = 75.0,
-            rating = 1.05,
             hsPercent = 30,
             mvps = 1,
             verdict = "пойдётская"
@@ -194,6 +189,8 @@ class MessageFormatterTest {
         assertTrue(help.contains("/track"))
         assertTrue(help.contains("/untrack"))
         assertTrue(help.contains("/unsubscribe"))
+        assertTrue(help.contains("лучший K/D в команде"))
+        assertFalse(help.contains("Рейтинг в карточке матча"))
         assertFalse(help.contains("/leaderboard"))
         assertFalse(help.contains("/players"))
         assertFalse(help.contains("/subscribe"))
