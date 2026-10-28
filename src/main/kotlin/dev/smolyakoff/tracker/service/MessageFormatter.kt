@@ -30,7 +30,12 @@ data class PlayerMatchDisplayData(
     val eloAfter: Int,
     val eloChange: Int,
     val skillLevel: Int,
-    val verdict: String
+    val verdict: String,
+    val clutchAttempts1v1: Int = 0,
+    val clutchAttempts1v2: Int = 0,
+    val tripleKills: Int = 0,
+    val quadroKills: Int = 0,
+    val pentaKills: Int = 0
 )
 
 object MessageFormatter {
@@ -95,6 +100,24 @@ object MessageFormatter {
                 appendLine("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
             }
         }
+    }
+
+    /** Short caption under the match card image: result line + clickable nicknames with Elo deltas. */
+    fun formatMatchCaption(
+        map: String,
+        score: String,
+        won: Boolean,
+        players: List<PlayerMatchDisplayData>
+    ): String = buildString {
+        val resultEmoji = if (won) "🟢" else "🔴"
+        val resultText = if (won) "Победа" else "Поражение"
+        val mapName = map.removePrefix("de_").replaceFirstChar { it.uppercase() }
+        appendLine("$resultEmoji <b>$resultText ${score.escapeHtml()}</b> · ${mapName.escapeHtml()}")
+        append(players.joinToString(" · ") { p ->
+            val profileUrl = "https://www.faceit.com/en/players/${p.nickname}".escapeHtml()
+            val eloSign = if (p.eloChange > 0) "+${p.eloChange}" else "${p.eloChange}"
+            "<a href=\"$profileUrl\">${p.nickname.escapeHtml()}</a> $eloSign"
+        })
     }
 
     fun calculateBestAndWorstMaps(segments: List<FaceitSegment>): Pair<FaceitSegment?, FaceitSegment?> {

@@ -75,7 +75,8 @@ class TrackerApp(
         matchRepository = matchRepository,
         eloTracker = eloTracker,
         notificationService = notificationService,
-        pollIntervalSeconds = config.pollIntervalSeconds
+        pollIntervalSeconds = config.pollIntervalSeconds,
+        timeZone = config.timeZone
     )
 
     private var botJob: Job? = null

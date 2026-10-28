@@ -10,6 +10,8 @@ import dev.smolyakoff.tracker.db.MatchRecord
 import dev.smolyakoff.tracker.db.MatchRepository
 import dev.smolyakoff.tracker.db.PlayerRepository
 import dev.smolyakoff.tracker.db.TrackedPlayer
+import dev.smolyakoff.tracker.service.MatchCardData
+import dev.smolyakoff.tracker.service.MatchCardRenderer
 import dev.smolyakoff.tracker.service.MessageFormatter
 import dev.smolyakoff.tracker.service.PlayerMatchDisplayData
 import dev.smolyakoff.tracker.service.VerdictService
@@ -22,6 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import java.time.Instant
+import java.time.ZoneId
 
 class MatchPoller(
     private val scope: CoroutineScope,
@@ -31,7 +35,8 @@ class MatchPoller(
     private val matchRepository: MatchRepository,
     private val eloTracker: EloTracker,
     private val notificationService: NotificationService,
-    private val pollIntervalSeconds: Long = 45L
+    private val pollIntervalSeconds: Long = 45L,
+    private val timeZone: ZoneId = ZoneId.systemDefault()
 ) {
     private val logger = LoggerFactory.getLogger(MatchPoller::class.java)
     private var job: Job? = null
@@ -120,6 +125,8 @@ class MatchPoller(
 
         val matchDetails = faceitApiClient.getMatchDetails(matchId)
         val durationMinutes = matchDetails?.durationMinutes
+        val finishedAtSeconds = pendingPlayers.maxOf { it.finishedAt }.takeIf { it > 0L }
+            ?: matchDetails?.finishedAt?.takeIf { it > 0L }
 
         val round = statsResponse.rounds.first()
         val allMatchPlayers = round.teams.flatMap { it.players }
@@ -163,18 +170,44 @@ class MatchPoller(
             for ((targetChatId, faceitIdsInChat) in chatPlayersMap) {
                 val displayPlayersForChat = faceitIdsInChat.mapNotNull { playerEvaluations[it] }
                 if (displayPlayersForChat.isNotEmpty()) {
-                    val formattedScore = round.formatScoreForPlayer(faceitIdsInChat.first())
-                    val matchCard = MessageFormatter.formatMatchCard(
+                    val anchorPlayerId = faceitIdsInChat.first { it in playerEvaluations }
+                    val formattedScore = round.formatScoreForPlayer(anchorPlayerId)
+                    val ownTeamId = round.teams.firstOrNull { t -> t.players.any { it.playerId == anchorPlayerId } }?.teamId
+                    val enemyTeamId = round.teams.firstOrNull { it.teamId != ownTeamId }?.teamId
+
+                    val card = MatchCardData(
                         map = round.map,
                         score = formattedScore,
                         won = matchWon,
+                        players = displayPlayersForChat,
                         durationMinutes = durationMinutes,
-                        players = displayPlayersForChat
+                        playedAt = finishedAtSeconds?.let { Instant.ofEpochSecond(it).atZone(timeZone) },
+                        teamAvgElo = ownTeamId?.let { matchDetails?.averageEloOf(it) },
+                        enemyAvgElo = enemyTeamId?.let { matchDetails?.averageEloOf(it) }
                     )
-                    notificationService.sendMessage(targetChatId, matchCard, markup)
+                    sendMatchCard(targetChatId, card, markup)
                 }
             }
         }
+    }
+
+    /** Sends the match card as an image; falls back to the text card if rendering or upload fails. */
+    private suspend fun sendMatchCard(chatId: Long, card: MatchCardData, markup: InlineKeyboardMarkup) {
+        val image = runCatching { MatchCardRenderer.render(card) }
+            .onFailure { logger.error("Failed to render match card image, falling back to text", it) }
+            .getOrNull()
+        if (image != null) {
+            val caption = MessageFormatter.formatMatchCaption(card.map, card.score, card.won, card.players)
+            if (notificationService.sendPhoto(chatId, image, caption, markup)) return
+        }
+        val textCard = MessageFormatter.formatMatchCard(
+            map = card.map,
+            score = card.score,
+            won = card.won,
+            durationMinutes = card.durationMinutes,
+            players = card.players
+        )
+        notificationService.sendMessage(chatId, textCard, markup)
     }
 
     private suspend fun evaluatePlayerPerformance(
@@ -241,7 +274,12 @@ class MatchPoller(
             eloAfter = eloResult.eloAfter,
             eloChange = eloResult.delta,
             skillLevel = currentLevel,
-            verdict = verdict
+            verdict = verdict,
+            clutchAttempts1v1 = matchPlayer.clutchAttempts1v1,
+            clutchAttempts1v2 = matchPlayer.clutchAttempts1v2,
+            tripleKills = matchPlayer.tripleKills,
+            quadroKills = matchPlayer.quadroKills,
+            pentaKills = matchPlayer.pentaKills
         )
 
         return PlayerEvaluation(displayData = displayData)
