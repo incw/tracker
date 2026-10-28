@@ -68,11 +68,27 @@ data class FaceitMatchDetailsResponse(
     val status: String = "",
     @SerialName("started_at") val startedAt: Long = 0L,
     @SerialName("finished_at") val finishedAt: Long = 0L,
-    val voting: MatchVoting? = null
+    val voting: MatchVoting? = null,
+    val teams: Map<String, MatchFaction> = emptyMap()
 ) {
     val durationMinutes: Long?
         get() = if (startedAt > 0L && finishedAt > startedAt) (finishedAt - startedAt) / 60L else null
+
+    /** Average pre-match Elo of the faction whose id matches the stats `team_id`. */
+    fun averageEloOf(teamId: String): Int? =
+        teams.values.firstOrNull { it.factionId == teamId }?.stats?.rating?.takeIf { it > 0 }
 }
+
+@Serializable
+data class MatchFaction(
+    @SerialName("faction_id") val factionId: String = "",
+    val stats: MatchFactionStats? = null
+)
+
+@Serializable
+data class MatchFactionStats(
+    val rating: Int? = null
+)
 
 @Serializable
 data class MatchVoting(
@@ -185,8 +201,23 @@ data class MatchPlayer(
     val clutchWins1v2: Int
         get() = playerStats["1v2Wins"]?.toIntOrNull() ?: 0
 
+    val clutchAttempts1v1: Int
+        get() = playerStats["1v1Count"]?.toIntOrNull() ?: 0
+
+    val clutchAttempts1v2: Int
+        get() = playerStats["1v2Count"]?.toIntOrNull() ?: 0
+
     val totalClutches: Int
         get() = clutchWins1v1 + clutchWins1v2
+
+    val tripleKills: Int
+        get() = playerStats["Triple Kills"]?.toIntOrNull() ?: 0
+
+    val quadroKills: Int
+        get() = playerStats["Quadro Kills"]?.toIntOrNull() ?: 0
+
+    val pentaKills: Int
+        get() = playerStats["Penta Kills"]?.toIntOrNull() ?: 0
 
     val utilityDamage: Int
         get() = playerStats["Utility Damage"]?.toDoubleOrNull()?.toInt() ?: 0

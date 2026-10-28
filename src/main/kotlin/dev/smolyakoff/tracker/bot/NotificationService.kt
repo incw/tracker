@@ -3,8 +3,10 @@ package dev.smolyakoff.tracker.bot
 import dev.inmo.tgbotapi.bot.TelegramBot
 import dev.inmo.tgbotapi.extensions.api.edit.text.editMessageText
 import dev.inmo.tgbotapi.extensions.api.send.sendTextMessage
+import dev.inmo.tgbotapi.extensions.api.send.media.sendPhoto
 import dev.inmo.tgbotapi.extensions.api.send.media.sendSticker
 import dev.inmo.tgbotapi.extensions.api.send.setMessageReaction
+import dev.inmo.tgbotapi.requests.abstracts.asMultipartFile
 import dev.inmo.tgbotapi.types.ChatId
 import dev.inmo.tgbotapi.types.LinkPreviewOptions
 import dev.inmo.tgbotapi.types.MessageId
@@ -66,6 +68,30 @@ class NotificationService(
             true
         }.onFailure {
             logger.error("Failed to send message to chat {}: {}", chatId, it.message)
+        }.getOrDefault(false)
+    }
+
+    suspend fun sendPhoto(
+        chatId: Long,
+        photo: ByteArray,
+        caption: String,
+        replyMarkup: InlineKeyboardMarkup? = null
+    ): Boolean {
+        val currentBot = bot ?: run {
+            logger.warn("Telegram bot instance is not initialized, cannot send photo to {}", chatId)
+            return false
+        }
+        return runCatching {
+            currentBot.sendPhoto(
+                ChatId(RawChatId(chatId)),
+                photo.asMultipartFile("match.png"),
+                text = caption,
+                parseMode = HTMLParseMode,
+                replyMarkup = replyMarkup
+            )
+            true
+        }.onFailure {
+            logger.error("Failed to send photo to chat {}: {}", chatId, it.message)
         }.getOrDefault(false)
     }
 

@@ -25,6 +25,7 @@ TELEGRAM_BOT_TOKEN=ваш_токен_бота
 FACEIT_API_KEY=ваш_api_ключ_faceit
 TELEGRAM_CHAT_ID=
 POLL_INTERVAL_SECONDS=45
+TIMEZONE=Europe/Moscow
 SQLITE_DB_PATH=/app/data/tracker.db
 ```
 

@@ -22,6 +22,11 @@ RUN ./gradlew installDist --no-daemon -x test
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
+# Fonts for rendering match card images (AWT needs fontconfig + a Cyrillic-capable font)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create non-root user and group
 RUN groupadd -g 10001 tracker && \
     useradd -u 10001 -g tracker -d /app -s /sbin/nologin tracker && \
@@ -34,7 +39,7 @@ COPY --from=builder --chown=tracker:tracker /app/build/install/tracker ./
 USER tracker
 
 # JVM optimizations: honor container memory limits, use G1GC, exit immediately on OOM
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true"
 ENV SQLITE_DB_PATH="/app/data/tracker.db"
 
 VOLUME ["/app/data"]
