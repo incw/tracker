@@ -152,7 +152,10 @@ class MatchPoller(
 
         if (playerEvaluations.isNotEmpty()) {
             val pendingFaceitIds = pendingPlayers.map { it.player.faceitId }
+            // Only notify chats that are still subscribed (respects /unsubscribe and bot being kicked)
+            val subscribedChatIds = notificationService.getTargetChatIds()
             val chatPlayersMap = chatTrackedPlayerRepository.getChatIdsForPlayers(pendingFaceitIds)
+                .filterKeys { it in subscribedChatIds }
 
             val matchUrl = "https://www.faceit.com/en/cs2/room/$matchId"
             val markup = InlineKeyboardMarkup(
