@@ -27,6 +27,12 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId
 
+data class PollerHealth(
+    val pollIntervalSeconds: Long,
+    val lastCycleCompletedAtMillis: Long?,
+    val lastCycleError: String?
+)
+
 class MatchPoller(
     private val scope: CoroutineScope,
     private val faceitApiClient: FaceitApiClient,
@@ -40,6 +46,15 @@ class MatchPoller(
 ) {
     private val logger = LoggerFactory.getLogger(MatchPoller::class.java)
     private var job: Job? = null
+
+    @Volatile private var lastCycleCompletedAtMillis: Long? = null
+    @Volatile private var lastCycleError: String? = null
+
+    fun health() = PollerHealth(
+        pollIntervalSeconds = pollIntervalSeconds,
+        lastCycleCompletedAtMillis = lastCycleCompletedAtMillis,
+        lastCycleError = lastCycleError
+    )
 
     data class PlayerEvaluation(
         val displayData: PlayerMatchDisplayData
@@ -57,8 +72,11 @@ class MatchPoller(
             while (isActive) {
                 try {
                     pollOnce()
+                    lastCycleCompletedAtMillis = System.currentTimeMillis()
+                    lastCycleError = null
                 } catch (e: Exception) {
                     logger.error("Error in MatchPoller cycle", e)
+                    lastCycleError = e::class.simpleName ?: "error"
                 }
                 delay(pollIntervalSeconds * 1000L)
             }

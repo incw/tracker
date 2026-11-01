@@ -16,9 +16,27 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.util.concurrent.atomic.AtomicInteger
+
+data class FaceitProbeResult(
+    val httpStatus: Int?,
+    val latencyMs: Long,
+    val blockedByCloudflare: Boolean = false,
+    val error: String? = null
+)
+
+data class FaceitApiHealth(
+    val lastSuccessAtMillis: Long?,
+    val lastFailureAtMillis: Long?,
+    val lastFailureStatus: Int?,
+    val consecutiveFailures: Int
+)
 
 class FaceitApiClient(
     private val apiKey: String,
@@ -27,6 +45,62 @@ class FaceitApiClient(
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(FaceitApiClient::class.java)
     private val baseUrl = "https://open.faceit.com/data/v4"
+
+    @Volatile private var lastSuccessAtMillis: Long? = null
+    @Volatile private var lastFailureAtMillis: Long? = null
+    @Volatile private var lastFailureStatus: Int? = null
+    private val consecutiveFailures = AtomicInteger(0)
+
+    fun health() = FaceitApiHealth(
+        lastSuccessAtMillis = lastSuccessAtMillis,
+        lastFailureAtMillis = lastFailureAtMillis,
+        lastFailureStatus = lastFailureStatus,
+        consecutiveFailures = consecutiveFailures.get()
+    )
+
+    private fun recordSuccess() {
+        lastSuccessAtMillis = System.currentTimeMillis()
+        consecutiveFailures.set(0)
+    }
+
+    private fun recordFailure(status: Int?) {
+        lastFailureAtMillis = System.currentTimeMillis()
+        lastFailureStatus = status
+        consecutiveFailures.incrementAndGet()
+    }
+
+    /**
+     * Makes a live request through the same HTTP client the bot uses for real traffic.
+     * Does not affect [health], which reflects only regular API calls.
+     */
+    suspend fun probe(timeoutMillis: Long = 10_000L): FaceitProbeResult {
+        rateLimiter.acquire()
+        val startedAt = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000L
+
+        return try {
+            withTimeout(timeoutMillis) {
+                val response: HttpResponse = httpClient.get("$baseUrl/games") {
+                    header(HttpHeaders.Authorization, "Bearer $apiKey")
+                    parameter("limit", 1)
+                }
+                val isHtml = response.contentType()?.match(ContentType.Text.Html) == true
+                FaceitProbeResult(
+                    httpStatus = response.status.value,
+                    latencyMs = elapsedMs(),
+                    // FACEIT API errors are JSON; an HTML 403 is the Cloudflare challenge page
+                    blockedByCloudflare = response.status == HttpStatusCode.Forbidden && isHtml
+                )
+            }
+        } catch (e: TimeoutCancellationException) {
+            FaceitProbeResult(httpStatus = null, latencyMs = elapsedMs(), error = "timeout")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("FACEIT probe failed", e)
+            FaceitProbeResult(httpStatus = null, latencyMs = elapsedMs(), error = e::class.simpleName ?: "error")
+        }
+    }
 
     suspend fun <T> authorizedGet(
         endpoint: String,
@@ -41,13 +115,18 @@ class FaceitApiClient(
             }
             if (response.status == HttpStatusCode.OK) {
                 @Suppress("UNCHECKED_CAST")
-                response.body(bodyType) as T
+                val body = response.body(bodyType) as T
+                recordSuccess()
+                body
             } else {
                 logger.warn("GET {} failed with HTTP {}", endpoint, response.status)
+                // 404 is a normal answer (e.g. unknown nickname): the API itself is reachable
+                if (response.status == HttpStatusCode.NotFound) recordSuccess() else recordFailure(response.status.value)
                 null
             }
         }.onFailure {
             logger.error("Exception requesting {}", endpoint, it)
+            recordFailure(null)
         }.getOrNull()
     }
 

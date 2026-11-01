@@ -10,7 +10,9 @@ data class AppConfig(
     val defaultChatId: Long?,
     val pollIntervalSeconds: Long,
     val sqliteDbPath: String,
-    val timeZone: ZoneId = DEFAULT_TIME_ZONE
+    val timeZone: ZoneId = DEFAULT_TIME_ZONE,
+    val adminTelegramId: Long? = null,
+    val appVersion: String = "dev"
 ) {
     init {
         require(pollIntervalSeconds >= 10) {
@@ -44,7 +46,12 @@ data class AppConfig(
                     .onFailure { _ -> logger.warn("Invalid TIMEZONE '{}', falling back to {}", it, DEFAULT_TIME_ZONE) }
                     .getOrNull()
             } ?: DEFAULT_TIME_ZONE
+            val adminTelegramId = getEnv("ADMIN_TELEGRAM_ID", "").toLongOrNull()
+            val appVersion = getEnv("APP_VERSION", "dev")
 
+            if (adminTelegramId == null) {
+                logger.warn("ADMIN_TELEGRAM_ID is not configured! /diagnostic is disabled.")
+            }
             if (faceitApiKey.isBlank()) {
                 logger.warn("FACEIT_API_KEY is not configured! FACEIT API calls will fail.")
             }
@@ -58,7 +65,9 @@ data class AppConfig(
                 defaultChatId = defaultChatId,
                 pollIntervalSeconds = pollInterval,
                 sqliteDbPath = dbPath,
-                timeZone = timeZone
+                timeZone = timeZone,
+                adminTelegramId = adminTelegramId,
+                appVersion = appVersion
             )
         }
     }

@@ -42,6 +42,10 @@ USER tracker
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true"
 ENV SQLITE_DB_PATH="/app/data/tracker.db"
 
+# Commit the image was built from, shown by /diagnostic
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 VOLUME ["/app/data"]
 
 ENTRYPOINT ["./bin/tracker"]
