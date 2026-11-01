@@ -5,10 +5,12 @@ import dev.smolyakoff.tracker.api.RateLimiter
 import dev.smolyakoff.tracker.bot.BotLauncher
 import dev.smolyakoff.tracker.bot.NotificationService
 import dev.smolyakoff.tracker.bot.handlers.CommandHandlers
+import dev.smolyakoff.tracker.bot.handlers.DiagnosticHandler
 import dev.smolyakoff.tracker.config.AppConfig
 import dev.smolyakoff.tracker.db.*
 import dev.smolyakoff.tracker.monitor.EloTracker
 import dev.smolyakoff.tracker.monitor.MatchPoller
+import dev.smolyakoff.tracker.service.DiagnosticService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -56,17 +58,6 @@ class TrackerApp(
         defaultChatId = config.defaultChatId
     )
 
-    val commandHandlers = CommandHandlers(
-        faceitApiClient = faceitApiClient,
-        playerRepository = playerRepository,
-        chatTrackedPlayerRepository = chatTrackedPlayerRepository,
-        chatRepository = chatRepository,
-        matchRepository = matchRepository,
-        eloRepository = eloRepository,
-        wordReactionService = wordReactionService,
-        notificationService = notificationService
-    )
-
     val poller = MatchPoller(
         scope = scope,
         faceitApiClient = faceitApiClient,
@@ -77,6 +68,33 @@ class TrackerApp(
         notificationService = notificationService,
         pollIntervalSeconds = config.pollIntervalSeconds,
         timeZone = config.timeZone
+    )
+
+    val diagnosticService = DiagnosticService(
+        appVersion = config.appVersion,
+        sqliteDbPath = config.sqliteDbPath,
+        faceitApiClient = faceitApiClient,
+        poller = poller,
+        diagnosticsRepository = DiagnosticsRepository(),
+        chatRepository = chatRepository,
+        chatTrackedPlayerRepository = chatTrackedPlayerRepository
+    )
+
+    val commandHandlers = CommandHandlers(
+        faceitApiClient = faceitApiClient,
+        playerRepository = playerRepository,
+        chatTrackedPlayerRepository = chatTrackedPlayerRepository,
+        chatRepository = chatRepository,
+        matchRepository = matchRepository,
+        eloRepository = eloRepository,
+        wordReactionService = wordReactionService,
+        notificationService = notificationService,
+        diagnosticHandler = DiagnosticHandler(
+            adminTelegramId = config.adminTelegramId,
+            timeZone = config.timeZone,
+            diagnosticService = diagnosticService,
+            notificationService = notificationService
+        )
     )
 
     private var botJob: Job? = null

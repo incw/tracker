@@ -1,5 +1,6 @@
 package dev.smolyakoff.tracker.service
 
+import dev.smolyakoff.tracker.api.FaceitProbeResult
 import dev.smolyakoff.tracker.api.model.FaceitSegment
 import dev.smolyakoff.tracker.api.model.PlayerLifetimeStatsResponse
 import dev.smolyakoff.tracker.db.MatchRecord
@@ -9,6 +10,9 @@ import dev.smolyakoff.tracker.util.escapeHtml
 import dev.smolyakoff.tracker.util.formatAdr
 import dev.smolyakoff.tracker.util.formatKd
 import dev.smolyakoff.tracker.util.formatNumber
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 data class PlayerMatchDisplayData(
     val nickname: String,
@@ -254,6 +258,85 @@ object MessageFormatter {
                 else -> "${index + 1}."
             }
             appendLine("$medal <b>${p.nickname.escapeHtml()}</b> — <b>${p.currentElo}</b> Elo (Lvl ${p.skillLevel})")
+        }
+    }
+
+    fun formatDiagnostics(report: DiagnosticReport, nowMillis: Long, timeZone: ZoneId): String = buildString {
+        appendLine("🩺 <b>Диагностика</b>")
+        appendLine("─────────────────────")
+        appendLine("🤖 <b>Бот</b>")
+        appendLine("Версия: <code>${report.version.take(7).escapeHtml()}</code>")
+        appendLine("Аптайм: <b>${formatDuration(report.uptimeMillis)}</b>")
+        appendLine("Память JVM: <b>${report.usedHeapMb} / ${report.maxHeapMb} МБ</b>")
+        appendLine()
+
+        val health = report.faceitHealth
+        appendLine("🌐 <b>FACEIT API</b>")
+        appendLine("Запрос сейчас: ${formatProbe(report.faceitProbe)}")
+        appendLine("Последний успешный запрос бота: <b>${formatAge(health.lastSuccessAtMillis, nowMillis)}</b>")
+        appendLine("Ошибок подряд: <b>${health.consecutiveFailures}</b>")
+        if (health.lastFailureAtMillis != null) {
+            val status = health.lastFailureStatus?.let { "HTTP $it" } ?: "нет ответа"
+            appendLine("Последняя ошибка: <b>$status</b>, ${formatAge(health.lastFailureAtMillis, nowMillis)}")
+        }
+        appendLine()
+
+        val poller = report.pollerHealth
+        val lastCycleAt = poller.lastCycleCompletedAtMillis
+        // The cycle may legitimately take longer than the interval, so allow a margin before alarming
+        val pollerOk = lastCycleAt != null && nowMillis - lastCycleAt <= poller.pollIntervalSeconds * 3_000L
+        appendLine("🔄 <b>Опрос матчей</b>")
+        appendLine("${if (pollerOk) "🟢" else "🔴"} Последний цикл: <b>${formatAge(lastCycleAt, nowMillis)}</b>")
+        poller.lastCycleError?.let { appendLine("Ошибка цикла: <code>${it.escapeHtml()}</code>") }
+        appendLine()
+
+        appendLine("🗄 <b>База</b>")
+        appendLine("Размер: <b>${report.databaseSizeBytes / 1024} КБ</b>")
+        val stats = report.databaseStats
+        if (stats != null) {
+            appendLine("Игроков: <b>${stats.players}</b>, записей матчей: <b>${stats.matches}</b>")
+            val lastMatch = stats.lastMatchAtMillis?.let {
+                DIAGNOSTIC_TIME_FORMAT.format(Instant.ofEpochMilli(it).atZone(timeZone))
+            } ?: "нет"
+            appendLine("Последний матч: <b>$lastMatch</b>")
+        } else {
+            appendLine("🔴 Не удалось прочитать данные, подробности в логах")
+        }
+        appendLine()
+
+        appendLine("💬 <b>Этот чат</b>")
+        val chat = report.chat
+        if (chat != null) {
+            appendLine("Подписка: <b>${if (chat.subscribed) "активна" else "выключена"}</b>, игроков: <b>${chat.trackedPlayers}</b>")
+        } else {
+            appendLine("🔴 Не удалось прочитать данные, подробности в логах")
+        }
+    }
+
+    private val DIAGNOSTIC_TIME_FORMAT = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+
+    private fun formatProbe(probe: FaceitProbeResult): String = when {
+        probe.blockedByCloudflare -> "🔴 <b>HTTP 403, блокировка Cloudflare</b>, ${probe.latencyMs} мс"
+        probe.httpStatus == 200 -> "🟢 <b>HTTP 200</b>, ${probe.latencyMs} мс"
+        probe.httpStatus != null -> "🔴 <b>HTTP ${probe.httpStatus}</b>, ${probe.latencyMs} мс"
+        else -> "🔴 <b>нет ответа</b> (${(probe.error ?: "error").escapeHtml()}), ${probe.latencyMs} мс"
+    }
+
+    private fun formatAge(atMillis: Long?, nowMillis: Long): String {
+        if (atMillis == null) return "ещё не было"
+        val ageMillis = (nowMillis - atMillis).coerceAtLeast(0L)
+        return if (ageMillis < 60_000L) "${ageMillis / 1000} с назад" else "${formatDuration(ageMillis)} назад"
+    }
+
+    private fun formatDuration(millis: Long): String {
+        val totalMinutes = millis / 60_000L
+        val days = totalMinutes / 1440
+        val hours = totalMinutes % 1440 / 60
+        val minutes = totalMinutes % 60
+        return when {
+            days > 0 -> "$days д $hours ч"
+            hours > 0 -> "$hours ч $minutes мин"
+            else -> "$minutes мин"
         }
     }
 

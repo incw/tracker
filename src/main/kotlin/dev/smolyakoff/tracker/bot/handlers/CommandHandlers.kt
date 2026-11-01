@@ -16,6 +16,7 @@ import dev.smolyakoff.tracker.service.WordReactionService
  *  - [StatsHandler]        : /stats, /top (per-chat)
  *  - [SubscriptionHandler] : /start, /help, /subscribe, /unsubscribe, /status, chat member events
  *  - [WordReactionHandler] : /word, /words, auto-response matching
+ *  - [DiagnosticHandler]   : /diagnostic (owner only)
  */
 class CommandHandlers(
     private val faceitApiClient: FaceitApiClient,
@@ -25,7 +26,8 @@ class CommandHandlers(
     private val matchRepository: MatchRepository,
     private val eloRepository: EloRepository,
     private val wordReactionService: WordReactionService,
-    private val notificationService: NotificationService
+    private val notificationService: NotificationService,
+    private val diagnosticHandler: DiagnosticHandler
 ) {
     private val trackHandler = TrackHandler(
         faceitApiClient = faceitApiClient,
@@ -61,5 +63,6 @@ class CommandHandlers(
         trackHandler.register(context)
         statsHandler.register(context)
         wordReactionHandler.register(context)
+        diagnosticHandler.register(context)
     }
 }
